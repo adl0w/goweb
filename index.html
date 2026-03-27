@@ -52,6 +52,14 @@
               <span>CPU picks from</span>
               <input id="auto-move-count" type="number" min="1" max="3" value="2">
             </label>
+            <label class="board-toggle" for="show-children-labels">
+              <input id="show-children-labels" type="checkbox">
+              <span>Show Child Labels</span>
+            </label>
+            <label class="board-toggle" for="show-move-numbers">
+              <input id="show-move-numbers" type="checkbox">
+              <span>Show Move Numbers</span>
+            </label>
           </div>
         </section>
       </section>
@@ -77,27 +85,23 @@
           <div class="tree-controls">
             <label class="tree-control" for="tree-depth">
               <span>Connected</span>
-              <input id="tree-depth" type="number" min="1" max="5" value="3">
+              <input id="tree-depth" type="range" min="1" max="8" value="3">
             </label>
             <label class="tree-control" for="tree-size">
-              <span>Size</span>
+              <span>Zoom</span>
               <input id="tree-size" type="range" min="70" max="150" value="100">
             </label>
             <label class="tree-control" for="tree-motion">
               <span>Motion</span>
-              <select id="tree-motion">
-                <option value="tight">Tight</option>
-                <option value="calm" selected>Calm</option>
-                <option value="floaty">Floaty</option>
-              </select>
+              <input id="tree-motion" type="range" min="0" max="100" value="50">
             </label>
-            <label class="tree-control" for="tree-layout">
-              <span>Layout</span>
-              <select id="tree-layout">
-                <option value="normal" selected>Normal</option>
-                <option value="radial">Radial</option>
-                <option value="fan">Fan</option>
-              </select>
+            <label class="tree-control" for="tree-buffer">
+              <span>Buffer</span>
+              <input id="tree-buffer" type="range" min="40" max="220" value="100">
+            </label>
+            <label class="tree-control" for="tree-vbuffer">
+              <span>V Buffer</span>
+              <input id="tree-vbuffer" type="range" min="40" max="220" value="100">
             </label>
           </div>
 

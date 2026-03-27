@@ -254,6 +254,23 @@ body {
   text-align: center;
 }
 
+.board-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 8px 10px;
+}
+
+.board-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #111111;
+}
+
 .cloud-column {
   position: sticky;
   top: 18px;

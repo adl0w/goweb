@@ -1,4 +1,4 @@
-const { Application, Container, Graphics } = window.PIXI || {};
+const { Application, Container, Graphics, Text } = window.PIXI || {};
 
 const STAR_POINTS = {
   9: [2, 4, 6],
@@ -50,6 +50,17 @@ function pointToText(move, size) {
     return "Pass";
   }
   return `${LETTERS[move.x]}${size - move.y}`;
+}
+
+function indexToAlphaLabel(index) {
+  let value = index + 1;
+  let label = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    value = Math.floor((value - 1) / 26);
+  }
+  return label;
 }
 
 function pointToSgf(move) {
@@ -106,6 +117,166 @@ function removeGroup(board, stones) {
   for (const [x, y] of stones) {
     board[y][x] = null;
   }
+}
+
+function collectGroupDetailed(board, x, y) {
+  const size = board.length;
+  const color = board[y][x];
+  const stack = [[x, y]];
+  const seen = new Set([coordKey(x, y)]);
+  const stones = [];
+  const liberties = new Set();
+
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    stones.push([cx, cy]);
+    for (const [nx, ny] of neighbors(size, cx, cy)) {
+      const value = board[ny][nx];
+      if (!value) {
+        liberties.add(coordKey(nx, ny));
+        continue;
+      }
+      if (value === color) {
+        const key = coordKey(nx, ny);
+        if (!seen.has(key)) {
+          seen.add(key);
+          stack.push([nx, ny]);
+        }
+      }
+    }
+  }
+
+  return { color, stones, liberties: liberties.size };
+}
+
+function buildGroups(board) {
+  const size = board.length;
+  const visited = new Set();
+  const stoneToGroup = new Map();
+  const groups = [];
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const color = board[y][x];
+      if (!color) {
+        continue;
+      }
+      const startKey = coordKey(x, y);
+      if (visited.has(startKey)) {
+        continue;
+      }
+      const group = collectGroupDetailed(board, x, y);
+      const id = groups.length;
+      groups.push(group);
+      for (const [sx, sy] of group.stones) {
+        const key = coordKey(sx, sy);
+        visited.add(key);
+        stoneToGroup.set(key, id);
+      }
+    }
+  }
+
+  return { groups, stoneToGroup };
+}
+
+function scoreTerritory(position) {
+  const { board, size } = position;
+  const { groups, stoneToGroup } = buildGroups(board);
+  const visited = new Set();
+  const settled = { B: 0, W: 0 };
+  const potential = { B: 0, W: 0 };
+  let neutral = 0;
+  let blackStones = 0;
+  let whiteStones = 0;
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const value = board[y][x];
+      if (value === "B") {
+        blackStones += 1;
+      } else if (value === "W") {
+        whiteStones += 1;
+      }
+    }
+  }
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const startKey = coordKey(x, y);
+      if (board[y][x] || visited.has(startKey)) {
+        continue;
+      }
+
+      const queue = [[x, y]];
+      visited.add(startKey);
+      const region = [];
+      const borderColors = new Set();
+      const borderGroups = new Set();
+      let touchesEdge = false;
+
+      while (queue.length) {
+        const [cx, cy] = queue.shift();
+        region.push([cx, cy]);
+        if (cx === 0 || cy === 0 || cx === size - 1 || cy === size - 1) {
+          touchesEdge = true;
+        }
+        for (const [nx, ny] of neighbors(size, cx, cy)) {
+          const value = board[ny][nx];
+          if (!value) {
+            const key = coordKey(nx, ny);
+            if (!visited.has(key)) {
+              visited.add(key);
+              queue.push([nx, ny]);
+            }
+            continue;
+          }
+          borderColors.add(value);
+          const gid = stoneToGroup.get(coordKey(nx, ny));
+          if (gid != null) {
+            borderGroups.add(gid);
+          }
+        }
+      }
+
+      if (borderColors.size !== 1) {
+        neutral += region.length;
+        continue;
+      }
+
+      const owner = Array.from(borderColors)[0];
+      const safeBoundary = Array.from(borderGroups).every((gid) => (groups[gid]?.liberties || 0) >= 2);
+      const edgeRisk = touchesEdge && borderGroups.size <= 1;
+
+      if (safeBoundary && !edgeRisk) {
+        settled[owner] += region.length;
+      } else {
+        potential[owner] += region.length;
+      }
+    }
+  }
+
+  const stonesPlayed = blackStones + whiteStones;
+  const progress = stonesPlayed / (size * size);
+  const potentialWeight = clamp((progress - 0.45) / 0.45, 0, 0.8);
+
+  const blackScore = blackStones + position.captures.B + settled.B + potential.B * potentialWeight;
+  const whiteScore = whiteStones + position.captures.W + settled.W + potential.W * potentialWeight;
+
+  return {
+    blackLead: blackScore - whiteScore,
+    blackScore,
+    whiteScore,
+    settled,
+    potential,
+    neutral,
+    progress,
+  };
+}
+
+function evaluatePositionStrength(position, perspective = "B") {
+  const territory = scoreTerritory(position);
+  const lead = perspective === "B" ? territory.blackLead : -territory.blackLead;
+  return { lead, territory };
 }
 
 function clamp(value, min, max) {
@@ -238,7 +409,14 @@ class DemoAnalyzer {
   async analyze(position, topN = 10) {
     const legalMoves = position.legalMoves();
     const center = (position.size - 1) / 2;
+    const baseEval = evaluatePositionStrength(position, position.nextPlayer);
     const enriched = legalMoves.map((move) => {
+      const next = position.play(move);
+      if (!next) {
+        return null;
+      }
+      const evalNext = evaluatePositionStrength(next, position.nextPlayer);
+      const captureGain = next.captures[position.nextPlayer] - position.captures[position.nextPlayer];
       let friendly = 0;
       let enemy = 0;
       for (const [nx, ny] of neighbors(position.size, move.x, move.y)) {
@@ -251,17 +429,19 @@ class DemoAnalyzer {
       }
       const distance = Math.abs(move.x - center) + Math.abs(move.y - center);
       const edgeBias = Math.min(move.x, move.y, position.size - 1 - move.x, position.size - 1 - move.y);
-      const score = 100 - distance * 4 + friendly * 3 + enemy * 2 + edgeBias * 0.8 + Math.random() * 1.5;
-      return { move, score };
-    });
+      const shape = friendly * 1.8 + enemy * 1.2 + edgeBias * 0.3 - distance * 0.6;
+      const scoreLead = evalNext.lead;
+      const score = (scoreLead - baseEval.lead) * 1.7 + scoreLead * 0.6 + captureGain * 4 + shape + Math.random() * 0.45;
+      return { move, score, scoreLead };
+    }).filter(Boolean);
 
     enriched.sort((a, b) => b.score - a.score);
     return {
-      source: "Built-in demo analyzer",
+      source: "Built-in territory analyzer",
       moves: enriched.slice(0, topN).map((entry, index) => ({
         rank: index + 1,
         move: entry.move,
-        scoreLead: Number(entry.score.toFixed(1)),
+        scoreLead: Number(entry.scoreLead.toFixed(1)),
       })),
     };
   }
@@ -366,12 +546,16 @@ const refs = {
   treeDepth: document.getElementById("tree-depth"),
   treeSize: document.getElementById("tree-size"),
   treeMotion: document.getElementById("tree-motion"),
+  treeBuffer: document.getElementById("tree-buffer"),
+  treeVBuffer: document.getElementById("tree-vbuffer"),
   analyzeButton: document.getElementById("analyze-btn"),
   resetButton: document.getElementById("reset-btn"),
   passButton: document.getElementById("pass-btn"),
   cpuBlackButton: document.getElementById("cpu-black-btn"),
   cpuWhiteButton: document.getElementById("cpu-white-btn"),
   autoMoveCount: document.getElementById("auto-move-count"),
+  showChildrenLabels: document.getElementById("show-children-labels"),
+  showMoveNumbers: document.getElementById("show-move-numbers"),
   suggestCount: document.getElementById("suggest-count"),
   suggestCountInput: document.getElementById("suggest-count-input"),
   endpointInput: document.getElementById("engine-endpoint"),
@@ -392,10 +576,15 @@ const state = {
   autoPlayer: null,
   autoBusy: false,
   paletteKey: "mono",
-  edgeScrollCooldown: 0,
+  edgeZoneDirection: 0,
+  edgeScrollTimer: 0,
   treeDepth: CLOUD_RADIUS,
   treeScale: 1,
-  treeMotion: "calm",
+  treeMotion: 0.5,
+  treeBuffer: 1,
+  treeVBuffer: 1,
+  showChildrenLabels: false,
+  showMoveNumbers: false,
 };
 
 function createRoot(size) {
@@ -429,7 +618,19 @@ function getPalette() {
 }
 
 function getMotionPreset() {
-  return MOTION_PRESETS[state.treeMotion] || MOTION_PRESETS.calm;
+  const t = clamp(Number(state.treeMotion) || 0.5, 0, 1);
+  const lerpPreset = (a, b, amount) => ({
+    orbitFocus: lerp(a.orbitFocus, b.orbitFocus, amount),
+    orbitOther: lerp(a.orbitOther, b.orbitOther, amount),
+    pushNear: lerp(a.pushNear, b.pushNear, amount),
+    pushFar: lerp(a.pushFar, b.pushFar, amount),
+    xEase: lerp(a.xEase, b.xEase, amount),
+    yEase: lerp(a.yEase, b.yEase, amount),
+  });
+  if (t <= 0.5) {
+    return lerpPreset(MOTION_PRESETS.tight, MOTION_PRESETS.calm, t / 0.5);
+  }
+  return lerpPreset(MOTION_PRESETS.calm, MOTION_PRESETS.floaty, (t - 0.5) / 0.5);
 }
 
 function applyPalette(key) {
@@ -500,9 +701,11 @@ function applyAnalysisToNode(node, result) {
     if (!nextPosition) {
       continue;
     }
+    const nextPositionHash = hashBoard(nextPosition.board, nextPosition.nextPlayer);
     let child = node.children
       .map((id) => state.nodes.get(id))
-      .find((entry) => moveKey(entry.move) === moveKey(candidate.move));
+      .find((entry) => moveKey(entry.move) === moveKey(candidate.move)
+        || hashBoard(entry.position.board, entry.position.nextPlayer) === nextPositionHash);
 
     if (!child) {
       child = new VariationNode({
@@ -561,6 +764,17 @@ async function appendUserMove(move, trigger = "manual") {
   const nextPosition = parent.position.play(move);
   if (!nextPosition) {
     refreshStatus("Illegal move for the current position.");
+    return;
+  }
+
+  const nextPositionHash = hashBoard(nextPosition.board, nextPosition.nextPlayer);
+  const existingChild = parent.children
+    .map((id) => state.nodes.get(id))
+    .find((entry) => moveKey(entry.move) === moveKey(move)
+      || hashBoard(entry.position.board, entry.position.nextPlayer) === nextPositionHash);
+  if (existingChild) {
+    selectNode(existingChild.id);
+    await maybeAutoRespond(trigger);
     return;
   }
 
@@ -698,6 +912,202 @@ function sortNodes(ids) {
   });
 }
 
+function buildRenderOrder() {
+  const order = new Map();
+  let cursor = 0;
+
+  const walk = (nodeId) => {
+    order.set(nodeId, cursor++);
+    const node = state.nodes.get(nodeId);
+    if (!node) {
+      return;
+    }
+    const children = sortNodes(node.children);
+    for (const childId of children) {
+      walk(childId);
+    }
+  };
+
+  walk("root");
+  return order;
+}
+
+function sortByRenderOrder(ids, orderMap) {
+  return ids.slice().sort((a, b) => {
+    const ao = orderMap.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const bo = orderMap.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return ao - bo || a.localeCompare(b);
+  });
+}
+
+function enforceRowOrderNoCross(targets, depthMap, focusDepth, orderMap, minGap = 20) {
+  const rows = new Map();
+  for (const id of targets.keys()) {
+    const relativeDepth = (depthMap.get(id) || 0) - focusDepth;
+    if (!rows.has(relativeDepth)) {
+      rows.set(relativeDepth, []);
+    }
+    rows.get(relativeDepth).push(id);
+  }
+
+  for (const ids of rows.values()) {
+    if (ids.length <= 1) {
+      continue;
+    }
+    const ordered = sortByRenderOrder(ids, orderMap);
+    const centerBefore = ordered.reduce((sum, id) => sum + targets.get(id).x, 0) / ordered.length;
+
+    let lastX = -Infinity;
+    for (const id of ordered) {
+      const target = targets.get(id);
+      const nextX = Math.max(target.x, lastX + minGap);
+      target.x = nextX;
+      lastX = nextX;
+    }
+
+    const centerAfter = ordered.reduce((sum, id) => sum + targets.get(id).x, 0) / ordered.length;
+    const shift = centerBefore - centerAfter;
+    for (const id of ordered) {
+      targets.get(id).x += shift;
+    }
+  }
+}
+
+function pickScrollTarget(direction) {
+  const anchorId = state.viewNodeId || state.selectedNodeId;
+  const anchorNode = state.nodes.get(anchorId);
+  if (!anchorNode) {
+    return null;
+  }
+
+  if (direction < 0) {
+    return anchorNode.parentId || null;
+  }
+
+  if (!anchorNode.children.length) {
+    return null;
+  }
+
+  const selectedPath = buildPathToRoot(state.nodes, state.selectedNodeId).map((node) => node.id);
+  const pathIndex = selectedPath.indexOf(anchorId);
+  if (pathIndex >= 0 && pathIndex < selectedPath.length - 1) {
+    const nextOnPath = selectedPath[pathIndex + 1];
+    if (anchorNode.children.includes(nextOnPath)) {
+      return nextOnPath;
+    }
+  }
+
+  return sortNodes(anchorNode.children)[0] || null;
+}
+
+function stepEdgeScroll(direction) {
+  const anchorId = state.hoveredNodeId || state.viewNodeId || state.selectedNodeId;
+  const anchorNode = state.nodes.get(anchorId);
+  if (!anchorNode) {
+    return false;
+  }
+
+  let nextId = null;
+  if (direction < 0) {
+    nextId = anchorNode.parentId || null;
+  } else if (direction > 0) {
+    if (anchorNode.children.length) {
+      const sortedChildren = sortNodes(anchorNode.children);
+      const selectedPath = buildPathToRoot(state.nodes, state.selectedNodeId).map((node) => node.id);
+      const pathIndex = selectedPath.indexOf(anchorId);
+      if (pathIndex >= 0 && pathIndex < selectedPath.length - 1 && sortedChildren.includes(selectedPath[pathIndex + 1])) {
+        nextId = selectedPath[pathIndex + 1];
+      } else {
+        nextId = sortedChildren[0];
+      }
+    }
+  }
+
+  if (!nextId || nextId === state.viewNodeId) {
+    return false;
+  }
+  state.viewNodeId = nextId;
+  if (state.hoveredNodeId) {
+    clearHover();
+  }
+  refreshStatus();
+  updateMoveInfo();
+  return true;
+}
+
+function isEditableTarget(target) {
+  if (!target) {
+    return false;
+  }
+  const tag = target.tagName;
+  return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function navigateSelectedByArrow(key) {
+  const selected = getSelectedNode();
+  if (!selected) {
+    return;
+  }
+
+  if (key === "ArrowUp") {
+    if (selected.parentId) {
+      selectNode(selected.parentId);
+    }
+    return;
+  }
+
+  if (key === "ArrowDown") {
+    if (!selected.children.length) {
+      return;
+    }
+    const nextChildId = sortNodes(selected.children)[0];
+    if (nextChildId) {
+      selectNode(nextChildId);
+    }
+    return;
+  }
+
+  if (key !== "ArrowLeft" && key !== "ArrowRight") {
+    return;
+  }
+
+  if (!selected.parentId) {
+    return;
+  }
+  const parent = state.nodes.get(selected.parentId);
+  if (!parent?.children?.length) {
+    return;
+  }
+  const siblings = sortNodes(parent.children);
+  const index = siblings.indexOf(selected.id);
+  if (index < 0) {
+    return;
+  }
+  const nextIndex = key === "ArrowLeft" ? index - 1 : index + 1;
+  if (nextIndex >= 0 && nextIndex < siblings.length) {
+    selectNode(siblings[nextIndex]);
+  }
+}
+
+function applyEdgeZoneFromEvent(event) {
+  const bounds = refs.cloudHost.getBoundingClientRect();
+  if (!bounds.height) {
+    state.edgeZoneDirection = 0;
+    state.edgeScrollTimer = 0;
+    return;
+  }
+  const topLimit = bounds.top + bounds.height * 0.15;
+  const bottomLimit = bounds.bottom - bounds.height * 0.15;
+  const nextDirection = event.clientY <= topLimit ? -1 : event.clientY >= bottomLimit ? 1 : 0;
+  if (nextDirection !== state.edgeZoneDirection) {
+    state.edgeZoneDirection = nextDirection;
+    state.edgeScrollTimer = 0;
+  }
+  if (nextDirection && state.hoveredNodeId) {
+    clearHover();
+  }
+}
+
 function getBoardMetrics(size) {
   const width = state.boardApp.renderer.width;
   const height = state.boardApp.renderer.height;
@@ -707,6 +1117,93 @@ function getBoardMetrics(size) {
   const originY = (height - boardSize) / 2;
   const step = boardSize / (size - 1);
   return { boardSize, originX, originY, step, inset };
+}
+
+function buildStoneMoveNumberMap(node) {
+  const path = buildPathToRoot(state.nodes, node.id);
+  const numberMap = new Map();
+  const sim = new GamePosition({ size: path[0].position.size });
+
+  for (let index = 1; index < path.length; index += 1) {
+    const stepNode = path[index];
+    const next = sim.play(stepNode.move);
+    if (!next) {
+      continue;
+    }
+
+    for (let y = 0; y < sim.size; y += 1) {
+      for (let x = 0; x < sim.size; x += 1) {
+        if (sim.board[y][x] && !next.board[y][x]) {
+          numberMap.delete(coordKey(x, y));
+        }
+      }
+    }
+
+    if (stepNode.move && !stepNode.move.pass) {
+      numberMap.set(coordKey(stepNode.move.x, stepNode.move.y), index);
+    }
+
+    sim.board = next.board;
+    sim.nextPlayer = next.nextPlayer;
+    sim.moveNumber = next.moveNumber;
+    sim.captures = { ...next.captures };
+    sim.history = next.history.slice();
+  }
+
+  return numberMap;
+}
+
+function drawBoardAnnotations(node, annotations, originX, originY, step) {
+  const previous = annotations.removeChildren();
+  previous.forEach((child) => child.destroy());
+
+  if (state.showChildrenLabels) {
+    const children = node.children
+      .map((id) => state.nodes.get(id))
+      .filter((child) => child && child.move && !child.move.pass)
+      .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999) || a.id.localeCompare(b.id));
+    children.forEach((child, index) => {
+      const label = new Text({
+        text: indexToAlphaLabel(index),
+        style: {
+          fontFamily: "Helvetica Neue, Helvetica, Arial, sans-serif",
+          fontSize: Math.max(18, step * 0.5),
+          fontWeight: "700",
+          fill: "#000000",
+        },
+      });
+      label.anchor.set(0.5);
+      label.x = originX + child.move.x * step;
+      label.y = originY + child.move.y * step;
+      annotations.addChild(label);
+    });
+  }
+
+  if (state.showMoveNumbers) {
+    const numberMap = buildStoneMoveNumberMap(node);
+    for (const [xy, number] of numberMap.entries()) {
+      const [xText, yText] = xy.split(",");
+      const x = Number(xText);
+      const y = Number(yText);
+      const stoneColor = node.position.board[y]?.[x];
+      if (!stoneColor) {
+        continue;
+      }
+      const text = new Text({
+        text: String(number),
+        style: {
+          fontFamily: "Helvetica Neue, Helvetica, Arial, sans-serif",
+          fontSize: Math.max(15, step * 0.4),
+          fontWeight: "700",
+          fill: stoneColor === "B" ? "#ffffff" : "#000000",
+        },
+      });
+      text.anchor.set(0.5);
+      text.x = originX + x * step;
+      text.y = originY + y * step;
+      annotations.addChild(text);
+    }
+  }
 }
 
 function drawStone(graphics, x, y, radius, color, outlineWidth = 2) {
@@ -724,7 +1221,7 @@ function renderBoard() {
   const { position } = node;
   const palette = getPalette();
   const { boardSize, originX, originY, step } = getBoardMetrics(position.size);
-  const { background, grid, stars, stones, marker, hitArea } = state.boardLayers;
+  const { background, grid, stars, stones, annotations, marker, hitArea } = state.boardLayers;
 
   background.clear();
 
@@ -764,11 +1261,13 @@ function renderBoard() {
     }
   }
 
+  drawBoardAnnotations(node, annotations, originX, originY, step);
+
   marker.clear();
   if (node.move && !node.move.pass) {
     const ringColor = getNodeMoveColor(node) === "black" ? palette.markerLight : palette.markerDark;
     marker
-      .circle(originX + node.move.x * step, originY + node.move.y * step, Math.max(8, step * 0.16))
+      .circle(originX + node.move.x * step, originY + node.move.y * step, Math.max(12, step * 0.26))
       .stroke({ width: 2.2, color: ringColor });
   } else if (node.analysis?.length) {
     const best = node.analysis[0].move;
@@ -825,18 +1324,148 @@ function drawCloudBackground() {
   backdrop.clear();
 }
 
+function computeNormalTargets(rows, orderedDepths, neighborhood, motion, centerX, centerY, rowGap, columnGap, orderMap, focusId) {
+  const targets = new Map();
+  const focusOrder = orderMap.get(focusId) ?? 0;
+
+  for (const depth of orderedDepths) {
+    const row = sortByRenderOrder(rows.get(depth), orderMap);
+    const rowCount = row.length;
+    if (!rowCount) {
+      continue;
+    }
+    const focusIndex = row.findIndex((id) => id === focusId);
+    const pivotIndex = focusIndex >= 0
+      ? focusIndex
+      : row.reduce((bestIndex, id, index) => {
+          const bestDelta = Math.abs((orderMap.get(row[bestIndex]) ?? 0) - focusOrder);
+          const nextDelta = Math.abs((orderMap.get(id) ?? 0) - focusOrder);
+          return nextDelta < bestDelta ? index : bestIndex;
+        }, Math.floor((rowCount - 1) / 2));
+    const rowSpread = columnGap * (1 + Math.abs(depth) * 0.05);
+    const sideClamp = rowSpread * 0.35;
+
+    row.forEach((id, index) => {
+      const distance = neighborhood.get(id);
+      const seed = seedFromId(id);
+      const offset = rowCount === 1 ? 0 : index - pivotIndex;
+      let baseX = centerX + offset * rowSpread;
+      if (offset < 0) {
+        baseX = Math.min(baseX, centerX - sideClamp);
+      } else if (offset > 0) {
+        baseX = Math.max(baseX, centerX + sideClamp);
+      }
+      const baseY = centerY + depth * rowGap;
+      const orbitX = rowCount === 1
+        ? 0
+        : Math.sin(state.time * 0.85 + seed * Math.PI * 2) * (distance === 0 ? motion.orbitFocus : motion.orbitOther);
+      const orbitY = Math.cos(state.time * 1.1 + seed * Math.PI * 2) * (distance === 0 ? motion.orbitFocus * 0.8 : motion.orbitOther * 0.75);
+      targets.set(id, { x: baseX + orbitX, y: baseY + orbitY, distance });
+    });
+  }
+  return targets;
+}
+
+function fitTargetsToViewport(targets, width, height, padding = 28) {
+  const entries = Array.from(targets.values());
+  if (!entries.length) {
+    return;
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const target of entries) {
+    minX = Math.min(minX, target.x);
+    maxX = Math.max(maxX, target.x);
+    minY = Math.min(minY, target.y);
+    maxY = Math.max(maxY, target.y);
+  }
+
+  const spanX = Math.max(1, maxX - minX);
+  const spanY = Math.max(1, maxY - minY);
+  const availableX = Math.max(1, width - padding * 2);
+  const availableY = Math.max(1, height - padding * 2);
+  const fitScale = Math.min(1, availableX / spanX, availableY / spanY);
+  const currentCenterX = (minX + maxX) / 2;
+  const currentCenterY = (minY + maxY) / 2;
+  const targetCenterX = width / 2;
+  const targetCenterY = height / 2;
+
+  for (const target of targets.values()) {
+    target.x = (target.x - currentCenterX) * fitScale + targetCenterX;
+    target.y = (target.y - currentCenterY) * fitScale + targetCenterY;
+  }
+}
+
+function resolveTreeOverlaps(targets, minDistance, pinnedId = null) {
+  const ids = Array.from(targets.keys());
+  if (ids.length <= 1) {
+    return;
+  }
+  const minDistSq = minDistance * minDistance;
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (let i = 0; i < ids.length; i += 1) {
+      const aId = ids[i];
+      const a = targets.get(aId);
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const bId = ids[j];
+        const b = targets.get(bId);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq >= minDistSq) {
+          continue;
+        }
+
+        const dist = Math.max(0.001, Math.sqrt(distSq));
+        const overlap = (minDistance - dist) * 0.5;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const axLocked = aId === pinnedId;
+        const bxLocked = bId === pinnedId;
+
+        if (axLocked && !bxLocked) {
+          b.x += nx * overlap * 2;
+          b.y += ny * overlap * 2;
+        } else if (!axLocked && bxLocked) {
+          a.x -= nx * overlap * 2;
+          a.y -= ny * overlap * 2;
+        } else {
+          a.x -= nx * overlap;
+          a.y -= ny * overlap;
+          b.x += nx * overlap;
+          b.y += ny * overlap;
+        }
+      }
+    }
+  }
+}
+
 function computeCloudLayout() {
-  const focusId = state.hoveredNodeId || state.viewNodeId || state.selectedNodeId;
-  const neighborhood = getNeighborhood(focusId, state.treeDepth);
+  const interactionFocusId = state.hoveredNodeId || state.viewNodeId || state.selectedNodeId;
   const depthMap = getDepthMap();
+  const orderMap = buildRenderOrder();
   const motion = getMotionPreset();
+  const focusId = interactionFocusId;
+  const neighborhoodAll = getNeighborhood(focusId, state.treeDepth);
+  const neighborhood = new Map();
+  for (const [id, distance] of neighborhoodAll.entries()) {
+    const node = state.nodes.get(id);
+    if (node?.move) {
+      neighborhood.set(id, distance);
+    }
+  }
   const focusDepth = depthMap.get(focusId) || 0;
   const width = state.cloudApp.renderer.width;
   const height = state.cloudApp.renderer.height;
   const centerX = width / 2;
   const centerY = height / 2;
-  const rowGap = clamp(height / 7.5, 88, 112);
-  const columnGap = clamp(width / 4.8, 64, 94);
+  const spacingBuffer = clamp(state.treeBuffer || 1, 0.4, 2);
+  const verticalBuffer = clamp(state.treeVBuffer || 1, 0.4, 2);
+  const rowGap = clamp((height / 7.5) * verticalBuffer, 42, 220);
+  const columnGap = clamp((width / 4.8) * spacingBuffer, 42, 148);
   const rows = new Map();
 
   for (const id of neighborhood.keys()) {
@@ -848,21 +1477,20 @@ function computeCloudLayout() {
   }
 
   const orderedDepths = Array.from(rows.keys()).sort((a, b) => a - b);
-  const targets = new Map();
-
-  for (const depth of orderedDepths) {
-    const row = sortNodes(rows.get(depth));
-    const rowWidth = (row.length - 1) * columnGap;
-    row.forEach((id, index) => {
-      const distance = neighborhood.get(id);
-      const seed = seedFromId(id);
-      const baseX = centerX + index * columnGap - rowWidth / 2;
-      const baseY = centerY + depth * rowGap;
-      const orbitX = Math.sin(state.time * 0.85 + seed * Math.PI * 2) * (distance === 0 ? motion.orbitFocus : motion.orbitOther);
-      const orbitY = Math.cos(state.time * 1.1 + seed * Math.PI * 2) * (distance === 0 ? motion.orbitFocus * 0.8 : motion.orbitOther * 0.75);
-      targets.set(id, { x: baseX + orbitX, y: baseY + orbitY, distance });
-    });
-  }
+  const targets = computeNormalTargets(
+    rows,
+    orderedDepths,
+    neighborhood,
+    motion,
+    centerX,
+    centerY,
+    rowGap,
+    columnGap,
+    orderMap,
+    focusId
+  );
+  const spacingMinGap = clamp(columnGap * 0.28 * spacingBuffer, 8, 44);
+  enforceRowOrderNoCross(targets, depthMap, focusDepth, orderMap, spacingMinGap);
 
   if (state.hoveredNodeId && targets.has(state.hoveredNodeId)) {
     const hoveredTarget = targets.get(state.hoveredNodeId);
@@ -879,10 +1507,23 @@ function computeCloudLayout() {
     }
   }
 
+  const pinnedId = state.hoveredNodeId && targets.has(state.hoveredNodeId) ? state.hoveredNodeId : null;
+  resolveTreeOverlaps(targets, clamp(18 * spacingBuffer, 14, 36), pinnedId);
+  enforceRowOrderNoCross(targets, depthMap, focusDepth, orderMap, spacingMinGap);
+  fitTargetsToViewport(targets, width, height, 34);
+
   const minDepth = orderedDepths.length ? orderedDepths[0] : 0;
   const maxDepth = orderedDepths.length ? orderedDepths[orderedDepths.length - 1] : 0;
 
-  return { focusId, neighborhood, targets, minDepth, maxDepth, depthMap };
+  return {
+    focusId,
+    neighborhood,
+    targets,
+    minDepth,
+    maxDepth,
+    depthMap,
+    interactionFocusId,
+  };
 }
 
 function ensureCloudView(nodeId) {
@@ -897,15 +1538,7 @@ function ensureCloudView(nodeId) {
   container.eventMode = "static";
   container.cursor = "pointer";
   container.on("pointerover", () => {
-    const view = state.cloudViews.get(nodeId);
-    if (view?.edgeDirection) {
-      if (state.edgeScrollCooldown <= 0) {
-        state.hoveredNodeId = null;
-        state.viewNodeId = nodeId;
-        state.edgeScrollCooldown = 0.22;
-        refreshStatus();
-        updateMoveInfo();
-      }
+    if (state.edgeZoneDirection !== 0) {
       return;
     }
     state.hoveredNodeId = nodeId;
@@ -914,14 +1547,6 @@ function ensureCloudView(nodeId) {
     updateMoveInfo();
   });
   container.on("pointertap", () => {
-    const view = state.cloudViews.get(nodeId);
-    if (view?.edgeDirection) {
-      state.viewNodeId = nodeId;
-      state.hoveredNodeId = null;
-      refreshStatus();
-      updateMoveInfo();
-      return;
-    }
     selectNode(nodeId);
   });
 
@@ -934,7 +1559,6 @@ function ensureCloudView(nodeId) {
     y: state.cloudApp.renderer.height / 2,
     scale: 1,
     alpha: 0,
-    edgeDirection: 0,
   };
   state.cloudViews.set(nodeId, view);
   return view;
@@ -1010,7 +1634,16 @@ function stepCloud(deltaSeconds) {
   }
 
   state.time += deltaSeconds;
-  state.edgeScrollCooldown = Math.max(0, state.edgeScrollCooldown - deltaSeconds);
+  if (state.edgeZoneDirection !== 0) {
+    state.edgeScrollTimer += deltaSeconds;
+    const scrollStepSeconds = 0.28;
+    if (state.edgeScrollTimer >= scrollStepSeconds) {
+      state.edgeScrollTimer -= scrollStepSeconds;
+      stepEdgeScroll(state.edgeZoneDirection);
+    }
+  } else {
+    state.edgeScrollTimer = 0;
+  }
   drawCloudBackground();
   const layout = computeCloudLayout();
   const visibleIds = new Set(layout.neighborhood.keys());
@@ -1029,15 +1662,9 @@ function stepCloud(deltaSeconds) {
   for (const [id, target] of layout.targets.entries()) {
     const view = ensureCloudView(id);
     const node = state.nodes.get(id);
-    const relativeDepth = (layout.depthMap.get(id) || 0) - (layout.depthMap.get(layout.focusId) || 0);
-    const edgeDirection = relativeDepth === layout.minDepth && layout.minDepth !== layout.maxDepth
-      ? -1
-      : relativeDepth === layout.maxDepth && layout.minDepth !== layout.maxDepth
-        ? 1
-        : 0;
     const hovered = id === state.hoveredNodeId;
     const selected = id === state.selectedNodeId;
-    const focus = id === layout.focusId;
+    const focus = id === layout.interactionFocusId;
     const scale = hovered ? 1.45 : focus ? 1.26 : target.distance === 1 ? 1.08 : target.distance === 2 ? 0.97 : 0.9;
     const targetAlpha = hovered ? 1 : focus ? 1 : target.distance === 1 ? 0.94 : target.distance === 2 ? 0.58 : 0.22;
     const motion = getMotionPreset();
@@ -1052,11 +1679,10 @@ function stepCloud(deltaSeconds) {
     view.container.alpha = view.alpha;
     view.container.position.set(view.x, view.y);
     view.container.scale.set(view.scale);
-    view.edgeDirection = edgeDirection;
-    view.container.cursor = edgeDirection ? "ns-resize" : "pointer";
+    view.container.cursor = "pointer";
     drawCloudNode(view, node, {
       distance: target.distance,
-      hovered: edgeDirection ? false : hovered,
+      hovered,
       selected,
       focus,
     });
@@ -1085,6 +1711,7 @@ async function bootstrapPixi() {
   const grid = new Graphics();
   const stars = new Graphics();
   const stones = new Container();
+  const annotations = new Container();
   const marker = new Graphics();
   const hitArea = new Graphics();
   hitArea.eventMode = "static";
@@ -1096,8 +1723,8 @@ async function bootstrapPixi() {
       void appendUserMove(move, "manual");
     }
   });
-  state.boardLayers = { background, grid, stars, stones, marker, hitArea };
-  state.boardApp.stage.addChild(background, grid, stars, stones, marker, hitArea);
+  state.boardLayers = { background, grid, stars, stones, annotations, marker, hitArea };
+  state.boardApp.stage.addChild(background, grid, stars, stones, annotations, marker, hitArea);
 
   const backdrop = new Graphics();
   const baseLinks = new Graphics();
@@ -1127,21 +1754,50 @@ function wireEvents() {
     applyPalette(refs.paletteSelect.value);
   });
   refs.treeDepth.addEventListener("input", () => {
-    state.treeDepth = clamp(Number(refs.treeDepth.value) || CLOUD_RADIUS, 1, 5);
+    state.treeDepth = clamp(Number(refs.treeDepth.value) || CLOUD_RADIUS, 1, 8);
     refs.treeDepth.value = String(state.treeDepth);
   });
   refs.treeSize.addEventListener("input", () => {
     state.treeScale = clamp((Number(refs.treeSize.value) || 100) / 100, 0.7, 1.5);
   });
-  refs.treeMotion.addEventListener("change", () => {
-    state.treeMotion = MOTION_PRESETS[refs.treeMotion.value] ? refs.treeMotion.value : "calm";
+  refs.treeMotion.addEventListener("input", () => {
+    state.treeMotion = clamp((Number(refs.treeMotion.value) || 50) / 100, 0, 1);
+  });
+  refs.treeBuffer.addEventListener("input", () => {
+    state.treeBuffer = clamp((Number(refs.treeBuffer.value) || 100) / 100, 0.4, 2);
+  });
+  refs.treeVBuffer.addEventListener("input", () => {
+    state.treeVBuffer = clamp((Number(refs.treeVBuffer.value) || 100) / 100, 0.4, 2);
   });
   refs.suggestCount.addEventListener("input", () => syncSuggestControls(refs.suggestCount.value));
   refs.suggestCountInput.addEventListener("input", () => syncSuggestControls(refs.suggestCountInput.value));
   refs.autoMoveCount.addEventListener("input", () => {
     refs.autoMoveCount.value = String(getAutoSuggestCount());
   });
-  refs.cloudHost.addEventListener("mouseleave", clearHover);
+  refs.showChildrenLabels.addEventListener("change", () => {
+    state.showChildrenLabels = Boolean(refs.showChildrenLabels.checked);
+    renderBoard();
+  });
+  refs.showMoveNumbers.addEventListener("change", () => {
+    state.showMoveNumbers = Boolean(refs.showMoveNumbers.checked);
+    renderBoard();
+  });
+  refs.cloudHost.addEventListener("mousemove", applyEdgeZoneFromEvent);
+  refs.cloudHost.addEventListener("mouseleave", () => {
+    state.edgeZoneDirection = 0;
+    state.edgeScrollTimer = 0;
+    clearHover();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      return;
+    }
+    if (isEditableTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    navigateSelectedByArrow(event.key);
+  });
   window.addEventListener("resize", renderBoard);
 }
 
@@ -1171,15 +1827,19 @@ function updateMoveInfo() {
 }
 
 async function bootstrap() {
-  if (!window.PIXI || !Application || !Container || !Graphics) {
+  if (!window.PIXI || !Application || !Container || !Graphics || !Text) {
     showRuntimeError("PixiJS failed to load. Check your internet connection or CDN access, then reload localhost.");
     return;
   }
   applyPalette(refs.paletteSelect?.value || "mono");
   syncSuggestControls(10);
-  state.treeDepth = clamp(Number(refs.treeDepth?.value) || CLOUD_RADIUS, 1, 5);
+  state.treeDepth = clamp(Number(refs.treeDepth?.value) || CLOUD_RADIUS, 1, 8);
   state.treeScale = clamp((Number(refs.treeSize?.value) || 100) / 100, 0.7, 1.5);
-  state.treeMotion = MOTION_PRESETS[refs.treeMotion?.value] ? refs.treeMotion.value : "calm";
+  state.treeMotion = clamp((Number(refs.treeMotion?.value) || 50) / 100, 0, 1);
+  state.treeBuffer = clamp((Number(refs.treeBuffer?.value) || 100) / 100, 0.4, 2);
+  state.treeVBuffer = clamp((Number(refs.treeVBuffer?.value) || 100) / 100, 0.4, 2);
+  state.showChildrenLabels = Boolean(refs.showChildrenLabels?.checked);
+  state.showMoveNumbers = Boolean(refs.showMoveNumbers?.checked);
   await bootstrapPixi();
   wireEvents();
   resetApp();
