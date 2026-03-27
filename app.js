@@ -804,7 +804,6 @@ function undoMove() {
 function resetApp() {
   createRoot(Number(refs.boardSizeSelect.value));
   state.autoBusy = false;
-  updateAnalysisMeta("Generate best moves to grow the cloud.");
   renderBoard();
   refreshStatus();
   updateMoveInfo();
