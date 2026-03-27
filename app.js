@@ -1026,12 +1026,21 @@ function stepEdgeScroll(direction) {
     return false;
   }
   state.viewNodeId = nextId;
-  if (state.hoveredNodeId) {
-    clearHover();
-  }
+  state.hoveredNodeId = nextId;
+  renderBoard();
   refreshStatus();
   updateMoveInfo();
   return true;
+}
+
+function commitScrolledViewSelection() {
+  if (state.viewNodeId && state.viewNodeId !== state.selectedNodeId) {
+    selectNode(state.viewNodeId);
+    return;
+  }
+  if (state.hoveredNodeId) {
+    clearHover();
+  }
 }
 
 function isEditableTarget(target) {
@@ -1099,11 +1108,17 @@ function applyEdgeZoneFromEvent(event) {
   const bottomLimit = bounds.bottom - bounds.height * 0.15;
   const nextDirection = event.clientY <= topLimit ? -1 : event.clientY >= bottomLimit ? 1 : 0;
   if (nextDirection !== state.edgeZoneDirection) {
+    const wasScrolling = state.edgeZoneDirection !== 0;
     state.edgeZoneDirection = nextDirection;
     state.edgeScrollTimer = 0;
-  }
-  if (nextDirection && state.hoveredNodeId) {
-    clearHover();
+    if (nextDirection !== 0) {
+      state.hoveredNodeId = state.viewNodeId || state.selectedNodeId;
+      renderBoard();
+      refreshStatus();
+      updateMoveInfo();
+    } else if (wasScrolling) {
+      commitScrolledViewSelection();
+    }
   }
 }
 
@@ -1783,9 +1798,14 @@ function wireEvents() {
   });
   refs.cloudHost.addEventListener("mousemove", applyEdgeZoneFromEvent);
   refs.cloudHost.addEventListener("mouseleave", () => {
+    const wasScrolling = state.edgeZoneDirection !== 0;
     state.edgeZoneDirection = 0;
     state.edgeScrollTimer = 0;
-    clearHover();
+    if (wasScrolling) {
+      commitScrolledViewSelection();
+    } else {
+      clearHover();
+    }
   });
   window.addEventListener("keydown", (event) => {
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {

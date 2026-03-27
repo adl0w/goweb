@@ -324,6 +324,36 @@ body {
   accent-color: currentColor;
 }
 
+.tree-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 2px 4px 0;
+}
+
+.arrow-keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.arrow-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid rgba(17, 17, 17, 0.18);
+  background: var(--control-bg);
+  color: var(--ink);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
 .suggest-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 70px auto;
