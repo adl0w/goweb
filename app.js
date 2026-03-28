@@ -20,6 +20,14 @@ const PALETTES = {
   coral: { bg: "#fff3ee", panel: "#fff3ee", surface: "#fce8e1", ink: "#2f2020", muted: "#8a6661", controlBg: "rgba(134, 72, 61, 0.08)", grid: "#7b4f48", star: "#7b4f48", blackStone: "#2f2020", whiteStone: "#fffaf8", markerDark: "#d06b57", markerLight: "#fffaf8", link: "#e2beb6", linkFocus: "#d06b57", haloSoft: "#efd4cf", haloSelected: "#dca49a", rootStone: "#f3ddd7" },
   slate: { bg: "#f3f5f8", panel: "#f3f5f8", surface: "#ebeff4", ink: "#1e2934", muted: "#667685", controlBg: "rgba(48, 71, 92, 0.08)", grid: "#30475c", star: "#30475c", blackStone: "#1e2934", whiteStone: "#fdfefe", markerDark: "#52718f", markerLight: "#fdfefe", link: "#c6d0da", linkFocus: "#52718f", haloSoft: "#dbe2e9", haloSelected: "#aebccc", rootStone: "#e7edf2" },
 };
+const DARK_PALETTES = {
+  mono: { bg: "#0e0f12", panel: "#111318", surface: "#151821", ink: "#e8ebf2", muted: "#9ba5b6", controlBg: "rgba(232, 235, 242, 0.08)", grid: "#9aa6bc", star: "#9aa6bc", blackStone: "#0f1014", whiteStone: "#cfd6e4", markerDark: "#7cc8ff", markerLight: "#f4f7ff", link: "#445067", linkFocus: "#9ad1ff", haloSoft: "#2a3344", haloSelected: "#4a5f84", rootStone: "#2a2f3d" },
+  paper: { bg: "#1c1712", panel: "#211a14", surface: "#272018", ink: "#efe4d3", muted: "#b7a58d", controlBg: "rgba(239, 228, 211, 0.08)", grid: "#b59b7d", star: "#b59b7d", blackStone: "#201a14", whiteStone: "#dfcfb7", markerDark: "#ffc07a", markerLight: "#fff3df", link: "#6a5542", linkFocus: "#ffd6a2", haloSoft: "#3e3126", haloSelected: "#745b45", rootStone: "#3a2d22" },
+  sage: { bg: "#0f1512", panel: "#121a16", surface: "#16211b", ink: "#d9ebe0", muted: "#95b3a1", controlBg: "rgba(217, 235, 224, 0.08)", grid: "#7ba58d", star: "#7ba58d", blackStone: "#132019", whiteStone: "#cce4d5", markerDark: "#79d2a8", markerLight: "#e8fff2", link: "#355046", linkFocus: "#9ff0c6", haloSoft: "#21352d", haloSelected: "#3f6d58", rootStone: "#23372f" },
+  coral: { bg: "#1b1212", panel: "#211616", surface: "#291d1c", ink: "#f0dedd", muted: "#c29a96", controlBg: "rgba(240, 222, 221, 0.08)", grid: "#bf8680", star: "#bf8680", blackStone: "#251918", whiteStone: "#e7cbc8", markerDark: "#ff9c89", markerLight: "#ffece9", link: "#6f4c49", linkFocus: "#ffbeaf", haloSoft: "#3a2725", haloSelected: "#7b4f49", rootStone: "#3a2725" },
+  slate: { bg: "#0f141b", panel: "#131926", surface: "#182131", ink: "#dbe7f5", muted: "#97abc3", controlBg: "rgba(219, 231, 245, 0.08)", grid: "#86a2c4", star: "#86a2c4", blackStone: "#121b29", whiteStone: "#ccdaeb", markerDark: "#7fb9ff", markerLight: "#edf5ff", link: "#364b66", linkFocus: "#9fcaff", haloSoft: "#223449", haloSelected: "#44678f", rootStone: "#24384f" },
+};
+const LOADING_ASCII_CYCLE = ["|", "/", "-", "\\"];
 
 function deepCloneBoard(board) {
   return board.map((row) => row.slice());
@@ -459,6 +467,8 @@ class EndpointAnalyzer {
       moveNumber: position.moveNumber,
       stones: serializeStones(position.board),
       topN,
+      maxVisits: 10,
+      maxTime: 1.4,
     };
 
     const response = await fetch(this.endpoint, {
@@ -468,7 +478,14 @@ class EndpointAnalyzer {
     });
 
     if (!response.ok) {
-      throw new Error(`Analysis request failed with ${response.status}`);
+      let details = "";
+      try {
+        const data = await response.json();
+        if (data?.error) {
+          details = `: ${data.error}`;
+        }
+      } catch {}
+      throw new Error(`Analysis request failed with ${response.status}${details}`);
     }
 
     const data = await response.json();
@@ -543,11 +560,16 @@ const refs = {
   moveInfo: document.getElementById("move-info"),
   boardSizeSelect: document.getElementById("board-size"),
   paletteSelect: document.getElementById("palette-select"),
+  darkModeToggle: document.getElementById("dark-mode-toggle"),
   treeDepth: document.getElementById("tree-depth"),
   treeSize: document.getElementById("tree-size"),
   treeMotion: document.getElementById("tree-motion"),
   treeBuffer: document.getElementById("tree-buffer"),
   treeVBuffer: document.getElementById("tree-vbuffer"),
+  scatterEnabled: document.getElementById("scatter-enabled"),
+  scatterPixel: document.getElementById("scatter-pixel"),
+  scatterAmount: document.getElementById("scatter-amount"),
+  stoneGlow: document.getElementById("stone-glow"),
   analyzeButton: document.getElementById("analyze-btn"),
   resetButton: document.getElementById("reset-btn"),
   passButton: document.getElementById("pass-btn"),
@@ -556,13 +578,14 @@ const refs = {
   autoMoveCount: document.getElementById("auto-move-count"),
   showChildrenLabels: document.getElementById("show-children-labels"),
   showMoveNumbers: document.getElementById("show-move-numbers"),
+  showMovePreview: document.getElementById("show-move-preview"),
   suggestCount: document.getElementById("suggest-count"),
-  suggestCountInput: document.getElementById("suggest-count-input"),
   endpointInput: document.getElementById("engine-endpoint"),
 };
 
 const state = {
   nodes: new Map(),
+  preferredChildByParent: new Map(),
   selectedNodeId: "root",
   hoveredNodeId: null,
   viewNodeId: "root",
@@ -576,8 +599,12 @@ const state = {
   autoPlayer: null,
   autoBusy: false,
   paletteKey: "mono",
+  darkMode: false,
   edgeZoneDirection: 0,
   edgeScrollTimer: 0,
+  edgeHotspots: { top: null, bottom: null },
+  loadingNodesByParent: new Map(),
+  loadingRequestCounter: 0,
   treeDepth: CLOUD_RADIUS,
   treeScale: 1,
   treeMotion: 0.5,
@@ -585,10 +612,22 @@ const state = {
   treeVBuffer: 1,
   showChildrenLabels: false,
   showMoveNumbers: false,
+  showMovePreview: true,
+  previewMove: null,
+  boardCursorGlobal: null,
+  scatterFilter: null,
+  scatterFxSupported: false,
+  scatterFxEnabled: true,
+  scatterPixelSize: 4,
+  scatterAmount: 0.65,
+  stoneGlow: 0.7,
+  scatterTime: 0,
 };
 
 function createRoot(size) {
   state.nodes.clear();
+  state.preferredChildByParent.clear();
+  state.loadingNodesByParent.clear();
   state.nodeCounter = 0;
   const root = new VariationNode({
     id: "root",
@@ -605,7 +644,130 @@ function getSelectedNode() {
 }
 
 function getDisplayedNode() {
-  return state.nodes.get(state.hoveredNodeId || state.selectedNodeId);
+  return state.nodes.get(state.hoveredNodeId || state.viewNodeId || state.selectedNodeId);
+}
+
+function rememberPreferredChild(childId) {
+  const child = state.nodes.get(childId);
+  if (!child?.parentId || child.loading) {
+    return;
+  }
+  const parent = state.nodes.get(child.parentId);
+  if (!parent?.children?.includes(child.id)) {
+    return;
+  }
+  state.preferredChildByParent.set(parent.id, child.id);
+}
+
+function getNavigableChildIds(parentNode) {
+  if (!parentNode?.children?.length) {
+    return [];
+  }
+  return sortNodes(parentNode.children.filter((id) => {
+    const child = state.nodes.get(id);
+    return child && !child.loading;
+  }));
+}
+
+function getPreferredDownwardChildId(parentId) {
+  const parent = state.nodes.get(parentId);
+  const navigableChildren = getNavigableChildIds(parent);
+  if (!navigableChildren.length) {
+    return null;
+  }
+
+  const rememberedChildId = state.preferredChildByParent.get(parentId);
+  if (rememberedChildId && navigableChildren.includes(rememberedChildId)) {
+    return rememberedChildId;
+  }
+
+  const selectedPath = buildPathToRoot(state.nodes, state.selectedNodeId).map((node) => node.id);
+  const pathIndex = selectedPath.indexOf(parentId);
+  if (pathIndex >= 0 && pathIndex < selectedPath.length - 1) {
+    const nextOnPath = selectedPath[pathIndex + 1];
+    if (navigableChildren.includes(nextOnPath)) {
+      return nextOnPath;
+    }
+  }
+
+  return navigableChildren[0] || null;
+}
+
+function removeCloudView(nodeId) {
+  const view = state.cloudViews.get(nodeId);
+  if (!view) {
+    return;
+  }
+  view.container.destroy({ children: true });
+  state.cloudViews.delete(nodeId);
+}
+
+function clearLoadingNodes(parentId, requestToken = null) {
+  const parent = state.nodes.get(parentId);
+  const pending = state.loadingNodesByParent.get(parentId);
+  if (!parent || !pending) {
+    return;
+  }
+  if (requestToken && pending.token !== requestToken) {
+    return;
+  }
+
+  const loadingIds = new Set(pending.nodeIds);
+  parent.children = parent.children.filter((id) => !loadingIds.has(id));
+  for (const id of pending.nodeIds) {
+    if (state.hoveredNodeId === id) {
+      state.hoveredNodeId = null;
+    }
+    if (state.viewNodeId === id) {
+      state.viewNodeId = state.selectedNodeId;
+    }
+    if (state.selectedNodeId === id) {
+      state.selectedNodeId = parent.id;
+      state.viewNodeId = parent.id;
+    }
+    state.nodes.delete(id);
+    removeCloudView(id);
+  }
+
+  if (loadingIds.has(state.preferredChildByParent.get(parent.id))) {
+    state.preferredChildByParent.delete(parent.id);
+  }
+  state.loadingNodesByParent.delete(parent.id);
+}
+
+function createLoadingNodes(parentId, count) {
+  const parent = state.nodes.get(parentId);
+  if (!parent || count <= 0) {
+    return null;
+  }
+
+  clearLoadingNodes(parentId);
+  const token = `loading-${++state.loadingRequestCounter}`;
+  const loadingNodes = [];
+  const templatePosition = parent.position.play({ pass: true }) || parent.position.clone();
+  const loadingColor = parent.position.nextPlayer === "B" ? "black" : "white";
+
+  for (let index = 0; index < count; index += 1) {
+    const loadingNode = new VariationNode({
+      id: `loading-${++state.nodeCounter}`,
+      parentId: parent.id,
+      position: templatePosition.clone(),
+      move: { pass: true },
+      label: "Loading",
+      rank: Number.MAX_SAFE_INTEGER - count + index,
+    });
+    loadingNode.loading = true;
+    loadingNode.loadingColor = loadingColor;
+    loadingNodes.push(loadingNode);
+    state.nodes.set(loadingNode.id, loadingNode);
+    parent.children.push(loadingNode.id);
+  }
+
+  state.loadingNodesByParent.set(parent.id, {
+    token,
+    nodeIds: loadingNodes.map((node) => node.id),
+  });
+  return token;
 }
 
 function getAnalyzer() {
@@ -614,7 +776,8 @@ function getAnalyzer() {
 }
 
 function getPalette() {
-  return PALETTES[state.paletteKey] || PALETTES.mono;
+  const paletteSet = state.darkMode ? DARK_PALETTES : PALETTES;
+  return paletteSet[state.paletteKey] || paletteSet.mono;
 }
 
 function getMotionPreset() {
@@ -648,7 +811,7 @@ function applyPalette(key) {
 }
 
 function getSuggestCount() {
-  return clamp(Number(refs.suggestCount.value) || 10, 3, 20);
+  return clamp(Number(refs.suggestCount.value) || 2, 1, 4);
 }
 
 function getAutoSuggestCount() {
@@ -656,13 +819,76 @@ function getAutoSuggestCount() {
 }
 
 function syncSuggestControls(nextValue) {
-  const value = clamp(Number(nextValue) || 10, 3, 20);
+  const value = clamp(Number(nextValue) || 2, 1, 4);
   refs.suggestCount.value = String(value);
-  refs.suggestCountInput.value = String(value);
 }
 
 function updateAnalysisMeta(message) {
   refs.analysisMeta.textContent = message;
+}
+
+function createScatterFilter() {
+  if (!Filter) {
+    return null;
+  }
+  try {
+    return new Filter(undefined, SCATTER_DITHER_FRAGMENT, {
+      uResolution: new Float32Array([1, 1]),
+      uPixelSize: state.scatterPixelSize,
+      uScatter: state.scatterAmount,
+      uTime: 0,
+    });
+  } catch (error) {
+    console.warn("Scatter filter unavailable.", error);
+    return null;
+  }
+}
+
+function applyScatterFilter() {
+  if (!state.cloudApp?.stage) {
+    return;
+  }
+  if (!state.scatterFilter || !state.scatterFxEnabled) {
+    state.cloudApp.stage.filters = null;
+    return;
+  }
+  state.cloudApp.stage.filters = [state.scatterFilter];
+}
+
+function updateScatterFilterUniforms(deltaSeconds = 0) {
+  if (!state.scatterFilter?.uniforms) {
+    return;
+  }
+
+  state.scatterTime += Math.max(0, deltaSeconds || 0);
+
+  const width = Math.max(1, state.cloudApp?.renderer?.width || refs.cloudHost?.clientWidth || 1);
+  const height = Math.max(1, state.cloudApp?.renderer?.height || refs.cloudHost?.clientHeight || 1);
+  const uniforms = state.scatterFilter.uniforms;
+  const resolution = uniforms.uResolution;
+  if (ArrayBuffer.isView(resolution) && resolution.length >= 2) {
+    resolution[0] = width;
+    resolution[1] = height;
+  } else {
+    uniforms.uResolution = [width, height];
+  }
+  uniforms.uPixelSize = state.scatterPixelSize;
+  uniforms.uScatter = state.scatterAmount;
+  uniforms.uTime = state.scatterTime;
+}
+
+function setScatterControlsEnabled(enabled) {
+  const controls = [
+    refs.scatterEnabled,
+    refs.scatterPixel,
+    refs.scatterAmount,
+  ];
+  for (const control of controls) {
+    if (!control) {
+      continue;
+    }
+    control.disabled = !enabled;
+  }
 }
 
 function updateComputerControls() {
@@ -677,10 +903,14 @@ function showRuntimeError(message) {
 
 async function analyzeSelectedNode() {
   const node = getSelectedNode();
+  const suggestCount = getSuggestCount();
+  const loadingToken = createLoadingNodes(node.id, suggestCount);
+  refreshStatus();
+  updateMoveInfo();
   updateAnalysisMeta("Generating best moves...");
   refs.analyzeButton.disabled = true;
   try {
-    const result = await analyzeNode(node, getSuggestCount());
+    const result = await analyzeNode(node, suggestCount);
     updateAnalysisMeta(`${node.analysis.length} moves from ${result.source}. Hover to preview, click to commit.`);
     renderBoard();
   } catch (error) {
@@ -688,7 +918,11 @@ async function analyzeSelectedNode() {
     node.analysisSource = "";
     updateAnalysisMeta(error.message);
   } finally {
+    clearLoadingNodes(node.id, loadingToken);
     refs.analyzeButton.disabled = false;
+    renderBoard();
+    refreshStatus();
+    updateMoveInfo();
   }
 }
 
@@ -704,8 +938,9 @@ function applyAnalysisToNode(node, result) {
     const nextPositionHash = hashBoard(nextPosition.board, nextPosition.nextPlayer);
     let child = node.children
       .map((id) => state.nodes.get(id))
-      .find((entry) => moveKey(entry.move) === moveKey(candidate.move)
-        || hashBoard(entry.position.board, entry.position.nextPlayer) === nextPositionHash);
+      .find((entry) => entry && !entry.loading
+        && (moveKey(entry.move) === moveKey(candidate.move)
+          || hashBoard(entry.position.board, entry.position.nextPlayer) === nextPositionHash));
 
     if (!child) {
       child = new VariationNode({
@@ -735,9 +970,16 @@ async function analyzeNode(node, count) {
 }
 
 function selectNode(nodeId) {
+  const nextNode = state.nodes.get(nodeId);
+  if (!nextNode || nextNode.loading) {
+    return;
+  }
+  rememberPreferredChild(state.selectedNodeId);
   state.selectedNodeId = nodeId;
+  rememberPreferredChild(nodeId);
   state.hoveredNodeId = null;
   state.viewNodeId = nodeId;
+  state.previewMove = null;
   updateSelectedAnalysisMessage();
   renderBoard();
   refreshStatus();
@@ -770,8 +1012,9 @@ async function appendUserMove(move, trigger = "manual") {
   const nextPositionHash = hashBoard(nextPosition.board, nextPosition.nextPlayer);
   const existingChild = parent.children
     .map((id) => state.nodes.get(id))
-    .find((entry) => moveKey(entry.move) === moveKey(move)
-      || hashBoard(entry.position.board, entry.position.nextPlayer) === nextPositionHash);
+    .find((entry) => entry && !entry.loading
+      && (moveKey(entry.move) === moveKey(move)
+        || hashBoard(entry.position.board, entry.position.nextPlayer) === nextPositionHash));
   if (existingChild) {
     selectNode(existingChild.id);
     await maybeAutoRespond(trigger);
@@ -804,6 +1047,10 @@ function undoMove() {
 function resetApp() {
   createRoot(Number(refs.boardSizeSelect.value));
   state.autoBusy = false;
+  state.previewMove = null;
+  state.boardCursorGlobal = null;
+  state.scatterTime = 0;
+  updateScatterFilterUniforms(0);
   renderBoard();
   refreshStatus();
   updateMoveInfo();
@@ -828,7 +1075,7 @@ async function maybeAutoRespond(trigger) {
     const candidates = node.analysis
       .map((candidate) => node.children
         .map((id) => state.nodes.get(id))
-        .find((entry) => moveKey(entry.move) === moveKey(candidate.move)))
+        .find((entry) => entry && !entry.loading && moveKey(entry.move) === moveKey(candidate.move)))
       .filter(Boolean);
 
     if (!candidates.length) {
@@ -980,23 +1227,11 @@ function pickScrollTarget(direction) {
   }
 
   if (direction < 0) {
+    rememberPreferredChild(anchorId);
     return anchorNode.parentId || null;
   }
 
-  if (!anchorNode.children.length) {
-    return null;
-  }
-
-  const selectedPath = buildPathToRoot(state.nodes, state.selectedNodeId).map((node) => node.id);
-  const pathIndex = selectedPath.indexOf(anchorId);
-  if (pathIndex >= 0 && pathIndex < selectedPath.length - 1) {
-    const nextOnPath = selectedPath[pathIndex + 1];
-    if (anchorNode.children.includes(nextOnPath)) {
-      return nextOnPath;
-    }
-  }
-
-  return sortNodes(anchorNode.children)[0] || null;
+  return getPreferredDownwardChildId(anchorId);
 }
 
 function stepEdgeScroll(direction) {
@@ -1008,18 +1243,10 @@ function stepEdgeScroll(direction) {
 
   let nextId = null;
   if (direction < 0) {
+    rememberPreferredChild(anchorId);
     nextId = anchorNode.parentId || null;
   } else if (direction > 0) {
-    if (anchorNode.children.length) {
-      const sortedChildren = sortNodes(anchorNode.children);
-      const selectedPath = buildPathToRoot(state.nodes, state.selectedNodeId).map((node) => node.id);
-      const pathIndex = selectedPath.indexOf(anchorId);
-      if (pathIndex >= 0 && pathIndex < selectedPath.length - 1 && sortedChildren.includes(selectedPath[pathIndex + 1])) {
-        nextId = selectedPath[pathIndex + 1];
-      } else {
-        nextId = sortedChildren[0];
-      }
-    }
+    nextId = getPreferredDownwardChildId(anchorId);
   }
 
   if (!nextId || nextId === state.viewNodeId) {
@@ -1065,10 +1292,7 @@ function navigateSelectedByArrow(key) {
   }
 
   if (key === "ArrowDown") {
-    if (!selected.children.length) {
-      return;
-    }
-    const nextChildId = sortNodes(selected.children)[0];
+    const nextChildId = getPreferredDownwardChildId(selected.id);
     if (nextChildId) {
       selectNode(nextChildId);
     }
@@ -1086,7 +1310,7 @@ function navigateSelectedByArrow(key) {
   if (!parent?.children?.length) {
     return;
   }
-  const siblings = sortNodes(parent.children);
+  const siblings = getNavigableChildIds(parent);
   const index = siblings.indexOf(selected.id);
   if (index < 0) {
     return;
@@ -1104,9 +1328,21 @@ function applyEdgeZoneFromEvent(event) {
     state.edgeScrollTimer = 0;
     return;
   }
-  const topLimit = bounds.top + bounds.height * 0.15;
-  const bottomLimit = bounds.bottom - bounds.height * 0.15;
-  const nextDirection = event.clientY <= topLimit ? -1 : event.clientY >= bottomLimit ? 1 : 0;
+  const localX = event.clientX - bounds.left;
+  const localY = event.clientY - bounds.top;
+  const inHotspot = (hotspot) => {
+    if (!hotspot) {
+      return false;
+    }
+    const dx = localX - hotspot.x;
+    const dy = localY - hotspot.y;
+    return dx * dx + dy * dy <= hotspot.radius * hotspot.radius;
+  };
+  const nextDirection = inHotspot(state.edgeHotspots.top)
+    ? -1
+    : inHotspot(state.edgeHotspots.bottom)
+      ? 1
+      : 0;
   if (nextDirection !== state.edgeZoneDirection) {
     const wasScrolling = state.edgeZoneDirection !== 0;
     state.edgeZoneDirection = nextDirection;
@@ -1120,6 +1356,49 @@ function applyEdgeZoneFromEvent(event) {
       commitScrolledViewSelection();
     }
   }
+}
+
+function updateEdgeHotspots() {
+  const visible = [];
+  for (const [id, view] of state.cloudViews.entries()) {
+    if (!view.container.visible || view.alpha < 0.08) {
+      continue;
+    }
+    visible.push({ id, x: view.x, y: view.y, scale: view.scale });
+  }
+  if (!visible.length) {
+    state.edgeHotspots = { top: null, bottom: null };
+    return;
+  }
+
+  let topNode = visible[0];
+  let bottomNode = visible[0];
+  for (const node of visible) {
+    if (node.y < topNode.y) {
+      topNode = node;
+    }
+    if (node.y > bottomNode.y) {
+      bottomNode = node;
+    }
+  }
+
+  const hotspotRadius = (node) => clamp(15 + node.scale * 10, 18, 30);
+  state.edgeHotspots = {
+    top: {
+      id: topNode.id,
+      x: topNode.x,
+      y: topNode.y,
+      radius: hotspotRadius(topNode),
+    },
+    bottom: topNode.id === bottomNode.id
+      ? null
+      : {
+          id: bottomNode.id,
+          x: bottomNode.x,
+          y: bottomNode.y,
+          radius: hotspotRadius(bottomNode),
+        },
+  };
 }
 
 function getBoardMetrics(size) {
@@ -1165,6 +1444,25 @@ function buildStoneMoveNumberMap(node) {
   }
 
   return numberMap;
+}
+
+function updateBoardPointerPreview(global) {
+  state.boardCursorGlobal = global ? { x: global.x, y: global.y } : null;
+  if (!state.showMovePreview || !global) {
+    state.previewMove = null;
+    renderBoard();
+    return;
+  }
+  const point = boardPointFromGlobal(global);
+  if (!point) {
+    state.previewMove = null;
+    renderBoard();
+    return;
+  }
+  const selected = getSelectedNode();
+  const legal = selected.position.play(point);
+  state.previewMove = legal ? point : null;
+  renderBoard();
 }
 
 function drawBoardAnnotations(node, annotations, originX, originY, step) {
@@ -1222,7 +1520,14 @@ function drawBoardAnnotations(node, annotations, originX, originY, step) {
 
 function drawStone(graphics, x, y, radius, color, outlineWidth = 2) {
   const palette = getPalette();
+  const glowStrength = clamp(state.stoneGlow || 0, 0, 1.4);
+  const glowColor = color === palette.blackStone ? palette.markerLight : palette.markerDark;
   graphics.clear();
+  if (glowStrength > 0.01) {
+    graphics
+      .circle(x, y, radius + 4 + glowStrength * 8)
+      .fill({ color: glowColor, alpha: 0.04 + glowStrength * 0.12 });
+  }
   graphics.circle(x, y, radius).fill(color).stroke({ width: outlineWidth, color: palette.ink });
 }
 
@@ -1235,7 +1540,7 @@ function renderBoard() {
   const { position } = node;
   const palette = getPalette();
   const { boardSize, originX, originY, step } = getBoardMetrics(position.size);
-  const { background, grid, stars, stones, annotations, marker, hitArea } = state.boardLayers;
+  const { background, grid, stars, stones, annotations, preview, marker, cursor, hitArea } = state.boardLayers;
 
   background.clear();
 
@@ -1277,6 +1582,16 @@ function renderBoard() {
 
   drawBoardAnnotations(node, annotations, originX, originY, step);
 
+  preview.clear();
+  if (state.showMovePreview && state.previewMove) {
+    const selected = getSelectedNode();
+    const fillColor = selected.position.nextPlayer === "B" ? palette.blackStone : palette.whiteStone;
+    preview
+      .circle(originX + state.previewMove.x * step, originY + state.previewMove.y * step, Math.max(10, step * 0.42))
+      .fill({ color: fillColor, alpha: 0.38 })
+      .stroke({ width: 2, color: palette.ink, alpha: 0.85 });
+  }
+
   marker.clear();
   if (node.move && !node.move.pass) {
     const ringColor = getNodeMoveColor(node) === "black" ? palette.markerLight : palette.markerDark;
@@ -1294,6 +1609,15 @@ function renderBoard() {
 
   hitArea.clear();
   hitArea.rect(originX, originY, boardSize, boardSize).fill({ color: "#ffffff", alpha: 0.001 });
+
+  cursor.clear();
+  if (state.boardCursorGlobal) {
+    const x = state.boardCursorGlobal.x;
+    const y = state.boardCursorGlobal.y;
+    cursor
+      .circle(x, y, 3.5)
+      .fill("#000000");
+  }
 }
 
 function refreshStatus(extraMessage = "") {
@@ -1546,12 +1870,28 @@ function ensureCloudView(nodeId) {
   }
 
   const container = new Container();
+  const glow = new Graphics();
   const halo = new Graphics();
   const stone = new Graphics();
-  container.addChild(halo, stone);
+  const loadingText = new Text({
+    text: "|",
+    style: {
+      fontFamily: "Courier New, monospace",
+      fontSize: 14,
+      fontWeight: "700",
+      fill: "#ffffff",
+    },
+  });
+  loadingText.anchor.set(0.5);
+  loadingText.visible = false;
+  container.addChild(glow, halo, stone, loadingText);
   container.eventMode = "static";
   container.cursor = "pointer";
   container.on("pointerover", () => {
+    const currentNode = state.nodes.get(nodeId);
+    if (!currentNode || currentNode.loading) {
+      return;
+    }
     if (state.edgeZoneDirection !== 0) {
       return;
     }
@@ -1561,14 +1901,20 @@ function ensureCloudView(nodeId) {
     updateMoveInfo();
   });
   container.on("pointertap", () => {
+    const currentNode = state.nodes.get(nodeId);
+    if (!currentNode || currentNode.loading) {
+      return;
+    }
     selectNode(nodeId);
   });
 
   state.cloudLayers.nodes.addChild(container);
   const view = {
     container,
+    glow,
     halo,
     stone,
+    loadingText,
     x: state.cloudApp.renderer.width / 2,
     y: state.cloudApp.renderer.height / 2,
     scale: 1,
@@ -1581,14 +1927,31 @@ function ensureCloudView(nodeId) {
 function drawCloudNode(view, node, info) {
   const palette = getPalette();
   const scaleBoost = state.treeScale;
-  const fillColor = getNodeMoveColor(node) === "black"
+  const nodeColor = node.loading
+    ? node.loadingColor
+    : getNodeMoveColor(node);
+  const fillColor = nodeColor === "black"
     ? palette.blackStone
-    : getNodeMoveColor(node) === "white"
+    : nodeColor === "white"
       ? palette.whiteStone
       : palette.rootStone;
   const radius = (info.focus ? 15 : info.distance === 1 ? 13 : 11) * scaleBoost;
   const centerBoost = info.distance <= 1 ? 6 : info.distance === 2 ? 2 : 0;
   const haloRadius = radius + (info.hovered ? 10 + centerBoost : info.selected ? 7 + centerBoost : info.focus ? 5 + centerBoost : 0);
+  const glowStrength = clamp(state.stoneGlow || 0, 0, 1.4);
+
+  view.glow.clear();
+  if (glowStrength > 0.01 && nodeColor !== "root") {
+    const glowColor = nodeColor === "black" ? palette.markerLight : palette.markerDark;
+    const outerRadius = radius + 5 + glowStrength * 10;
+    const innerRadius = radius + 2 + glowStrength * 5;
+    view.glow
+      .circle(0, 0, outerRadius)
+      .fill({ color: glowColor, alpha: 0.05 + glowStrength * 0.12 });
+    view.glow
+      .circle(0, 0, innerRadius)
+      .fill({ color: glowColor, alpha: 0.04 + glowStrength * 0.08 });
+  }
 
   view.halo.clear();
   if (info.hovered || info.selected || info.focus) {
@@ -1603,6 +1966,14 @@ function drawCloudNode(view, node, info) {
     width: info.hovered ? 3 : info.selected ? 2.4 : 2,
     color: palette.ink,
   });
+
+  view.loadingText.visible = Boolean(node.loading);
+  if (node.loading) {
+    const spinnerIndex = Math.floor(state.time * 8) % LOADING_ASCII_CYCLE.length;
+    view.loadingText.text = LOADING_ASCII_CYCLE[spinnerIndex];
+    view.loadingText.style.fontSize = Math.max(12, radius * 1.05);
+    view.loadingText.tint = nodeColor === "black" ? 0xffffff : 0x111111;
+  }
 }
 
 function drawCloudLinks(layout) {
@@ -1648,6 +2019,7 @@ function stepCloud(deltaSeconds) {
   }
 
   state.time += deltaSeconds;
+  updateScatterFilterUniforms(deltaSeconds);
   if (state.edgeZoneDirection !== 0) {
     state.edgeScrollTimer += deltaSeconds;
     const scrollStepSeconds = 0.28;
@@ -1676,8 +2048,8 @@ function stepCloud(deltaSeconds) {
   for (const [id, target] of layout.targets.entries()) {
     const view = ensureCloudView(id);
     const node = state.nodes.get(id);
-    const hovered = id === state.hoveredNodeId;
-    const selected = id === state.selectedNodeId;
+    const hovered = !node.loading && id === state.hoveredNodeId;
+    const selected = !node.loading && id === state.selectedNodeId;
     const focus = id === layout.interactionFocusId;
     const scale = hovered ? 1.45 : focus ? 1.26 : target.distance === 1 ? 1.08 : target.distance === 2 ? 0.97 : 0.9;
     const targetAlpha = hovered ? 1 : focus ? 1 : target.distance === 1 ? 0.94 : target.distance === 2 ? 0.58 : 0.22;
@@ -1693,7 +2065,7 @@ function stepCloud(deltaSeconds) {
     view.container.alpha = view.alpha;
     view.container.position.set(view.x, view.y);
     view.container.scale.set(view.scale);
-    view.container.cursor = "pointer";
+    view.container.cursor = node.loading ? "default" : "pointer";
     drawCloudNode(view, node, {
       distance: target.distance,
       hovered,
@@ -1701,6 +2073,8 @@ function stepCloud(deltaSeconds) {
       focus,
     });
   }
+
+  updateEdgeHotspots();
 
   drawCloudLinks(layout);
 }
@@ -1727,18 +2101,29 @@ async function bootstrapPixi() {
   const stones = new Container();
   const annotations = new Container();
   const marker = new Graphics();
+  const preview = new Graphics();
+  const cursor = new Graphics();
   const hitArea = new Graphics();
   hitArea.eventMode = "static";
-  hitArea.cursor = "crosshair";
+  hitArea.cursor = "none";
+  hitArea.on("pointermove", (event) => {
+    updateBoardPointerPreview(event.global);
+  });
+  hitArea.on("pointerout", () => {
+    state.previewMove = null;
+    state.boardCursorGlobal = null;
+    renderBoard();
+  });
   hitArea.on("pointertap", (event) => {
     clearHover();
     const move = boardPointFromGlobal(event.global);
+    state.previewMove = null;
     if (move) {
       void appendUserMove(move, "manual");
     }
   });
-  state.boardLayers = { background, grid, stars, stones, annotations, marker, hitArea };
-  state.boardApp.stage.addChild(background, grid, stars, stones, annotations, marker, hitArea);
+  state.boardLayers = { background, grid, stars, stones, annotations, preview, marker, cursor, hitArea };
+  state.boardApp.stage.addChild(background, grid, stars, stones, annotations, preview, marker, cursor, hitArea);
 
   const backdrop = new Graphics();
   const baseLinks = new Graphics();
@@ -1746,6 +2131,17 @@ async function bootstrapPixi() {
   const nodes = new Container();
   state.cloudLayers = { backdrop, baseLinks, focusLinks, nodes };
   state.cloudApp.stage.addChild(backdrop, baseLinks, focusLinks, nodes);
+  state.scatterFilter = createScatterFilter();
+  state.scatterFxSupported = Boolean(state.scatterFilter);
+  if (!state.scatterFxSupported) {
+    state.scatterFxEnabled = false;
+    if (refs.scatterEnabled) {
+      refs.scatterEnabled.checked = false;
+    }
+  }
+  setScatterControlsEnabled(state.scatterFxSupported);
+  applyScatterFilter();
+  updateScatterFilterUniforms(0);
   state.cloudApp.ticker.add((ticker) => {
     stepCloud(ticker.deltaMS / 1000);
   });
@@ -1767,6 +2163,10 @@ function wireEvents() {
   refs.paletteSelect.addEventListener("change", () => {
     applyPalette(refs.paletteSelect.value);
   });
+  refs.darkModeToggle?.addEventListener("change", () => {
+    state.darkMode = Boolean(refs.darkModeToggle.checked);
+    applyPalette(state.paletteKey);
+  });
   refs.treeDepth.addEventListener("input", () => {
     state.treeDepth = clamp(Number(refs.treeDepth.value) || CLOUD_RADIUS, 1, 8);
     refs.treeDepth.value = String(state.treeDepth);
@@ -1783,8 +2183,23 @@ function wireEvents() {
   refs.treeVBuffer.addEventListener("input", () => {
     state.treeVBuffer = clamp((Number(refs.treeVBuffer.value) || 100) / 100, 0.4, 2);
   });
+  refs.scatterEnabled?.addEventListener("change", () => {
+    state.scatterFxEnabled = Boolean(refs.scatterEnabled.checked);
+    applyScatterFilter();
+  });
+  refs.scatterPixel?.addEventListener("input", () => {
+    state.scatterPixelSize = clamp(Number(refs.scatterPixel.value) || 4, 1, 16);
+    updateScatterFilterUniforms(0);
+  });
+  refs.scatterAmount?.addEventListener("input", () => {
+    state.scatterAmount = clamp((Number(refs.scatterAmount.value) || 65) / 100, 0, 1.4);
+    updateScatterFilterUniforms(0);
+  });
+  refs.stoneGlow?.addEventListener("input", () => {
+    state.stoneGlow = clamp((Number(refs.stoneGlow.value) || 70) / 100, 0, 1.4);
+    renderBoard();
+  });
   refs.suggestCount.addEventListener("input", () => syncSuggestControls(refs.suggestCount.value));
-  refs.suggestCountInput.addEventListener("input", () => syncSuggestControls(refs.suggestCountInput.value));
   refs.autoMoveCount.addEventListener("input", () => {
     refs.autoMoveCount.value = String(getAutoSuggestCount());
   });
@@ -1794,6 +2209,13 @@ function wireEvents() {
   });
   refs.showMoveNumbers.addEventListener("change", () => {
     state.showMoveNumbers = Boolean(refs.showMoveNumbers.checked);
+    renderBoard();
+  });
+  refs.showMovePreview.addEventListener("change", () => {
+    state.showMovePreview = Boolean(refs.showMovePreview.checked);
+    if (!state.showMovePreview) {
+      state.previewMove = null;
+    }
     renderBoard();
   });
   refs.cloudHost.addEventListener("mousemove", applyEdgeZoneFromEvent);
@@ -1850,8 +2272,12 @@ async function bootstrap() {
     showRuntimeError("PixiJS failed to load. Check your internet connection or CDN access, then reload localhost.");
     return;
   }
+  state.darkMode = refs.darkModeToggle ? Boolean(refs.darkModeToggle.checked) : false;
   applyPalette(refs.paletteSelect?.value || "mono");
-  syncSuggestControls(10);
+  syncSuggestControls(2);
+  if (refs.endpointInput && !refs.endpointInput.value.trim()) {
+    refs.endpointInput.value = "http://localhost:8080/analyze";
+  }
   state.treeDepth = clamp(Number(refs.treeDepth?.value) || CLOUD_RADIUS, 1, 8);
   state.treeScale = clamp((Number(refs.treeSize?.value) || 100) / 100, 0.7, 1.5);
   state.treeMotion = clamp((Number(refs.treeMotion?.value) || 50) / 100, 0, 1);
@@ -1859,6 +2285,11 @@ async function bootstrap() {
   state.treeVBuffer = clamp((Number(refs.treeVBuffer?.value) || 100) / 100, 0.4, 2);
   state.showChildrenLabels = Boolean(refs.showChildrenLabels?.checked);
   state.showMoveNumbers = Boolean(refs.showMoveNumbers?.checked);
+  state.showMovePreview = refs.showMovePreview ? Boolean(refs.showMovePreview.checked) : true;
+  state.scatterFxEnabled = refs.scatterEnabled ? Boolean(refs.scatterEnabled.checked) : true;
+  state.scatterPixelSize = clamp(Number(refs.scatterPixel?.value) || 4, 1, 16);
+  state.scatterAmount = clamp((Number(refs.scatterAmount?.value) || 65) / 100, 0, 1.4);
+  state.stoneGlow = clamp((Number(refs.stoneGlow?.value) || 70) / 100, 0, 1.4);
   await bootstrapPixi();
   wireEvents();
   resetApp();

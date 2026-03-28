@@ -14,7 +14,6 @@
       <section class="board-column">
         <section class="panel board-panel">
           <div class="panel-row">
-            <p id="status-text" class="status-text">Black to play on move 1.</p>
             <div class="top-controls">
               <div class="size-picker">
                 <label for="board-size">Board</label>
@@ -34,10 +33,19 @@
                   <option value="slate">Slate</option>
                 </select>
               </div>
+              <label class="mode-toggle" for="dark-mode-toggle">
+                <input id="dark-mode-toggle" type="checkbox">
+                <span>Dark Mode</span>
+              </label>
             </div>
           </div>
 
-          <div id="board-stage" class="pixi-stage board-stage" aria-label="Interactive Go board"></div>
+          <div id="board-stage" class="pixi-stage board-stage" aria-label="Interactive Go board">
+            <div class="board-overlay-text">
+              <p id="status-text" class="status-text">Black to play on move 1.</p>
+              <p id="move-info" class="move-info">Position 0</p>
+            </div>
+          </div>
 
           <div class="play-controls">
             <button id="reset-btn" class="stone-button stone-button-white" type="button">Reset</button>
@@ -60,6 +68,10 @@
               <input id="show-move-numbers" type="checkbox">
               <span>Show Move Numbers</span>
             </label>
+            <label class="board-toggle" for="show-move-preview">
+              <input id="show-move-preview" type="checkbox" checked>
+              <span>Preview Next Move</span>
+            </label>
           </div>
         </section>
       </section>
@@ -69,15 +81,6 @@
           <div class="cloud-toolbar">
             <div>
               <p id="analysis-meta" class="analysis-meta">Ready.</p>
-              <p id="move-info" class="move-info">Position 0</p>
-            </div>
-
-            <div class="analysis-controls">
-              <div class="suggest-row">
-                <input id="suggest-count" type="range" min="3" max="20" value="10">
-                <input id="suggest-count-input" type="number" min="3" max="20" value="10">
-                <button id="analyze-btn" class="pill-button" type="button">Suggest</button>
-              </div>
             </div>
           </div>
 
@@ -102,9 +105,34 @@
               <span>motion</span>
               <input id="tree-motion" type="range" min="0" max="100" value="50">
             </label>
+            <label class="tree-control tree-control-toggle" for="scatter-enabled">
+              <span>scatter fx</span>
+              <input id="scatter-enabled" type="checkbox" checked>
+            </label>
+            <label class="tree-control" for="scatter-pixel">
+              <span>fx pixel</span>
+              <input id="scatter-pixel" type="range" min="1" max="16" value="4">
+            </label>
+            <label class="tree-control" for="scatter-amount">
+              <span>fx scatter</span>
+              <input id="scatter-amount" type="range" min="0" max="140" value="65">
+            </label>
+            <label class="tree-control" for="stone-glow">
+              <span>stone glow</span>
+              <input id="stone-glow" type="range" min="0" max="140" value="70">
+            </label>
           </div>
 
-          <div id="cloud-stage" class="pixi-stage cloud-stage"></div>
+          <div class="cloud-stage-wrap">
+            <div id="cloud-stage" class="pixi-stage cloud-stage"></div>
+            <div class="suggest-dock">
+              <button id="analyze-btn" class="pill-button" type="button">Suggest Moves</button>
+              <label class="suggest-slider" for="suggest-count">
+                <span>Moves</span>
+                <input id="suggest-count" type="range" min="1" max="4" value="2">
+              </label>
+            </div>
+          </div>
           <div class="tree-tip" aria-label="Tree keyboard navigation hint">
             <span class="arrow-keys" aria-hidden="true">
               <span class="arrow-key">↑</span>

@@ -1,0 +1,51 @@
+[katago] 2026-03-27 11:15:20-0500: Running with following config:
+[katago] logDir = analysis_logs
+[katago] maxVisits = 500
+[katago] nnCacheSizePowerOfTwo = 23
+[katago] nnMaxBatchSize = 64
+[katago] nnMutexPoolSizePowerOfTwo = 17
+[katago] nnRandomize = true
+[katago] numAnalysisThreads = 2
+[katago] numSearchThreads = 16
+[katago] reportAnalysisWinratesAs = BLACK
+[katago] 2026-03-27 11:15:20-0500: Analysis Engine starting...
+[katago] 2026-03-27 11:15:20-0500: KataGo v1.16.4
+[katago] 2026-03-27 11:15:20-0500: nnRandSeed0 = 7976143264603277237
+[katago] 2026-03-27 11:15:20-0500: After dedups: nnModelFile0 = C:\Users\mraid\Desktop\goweb\tools\katago\engine-eigen\kata1.bin.gz useFP16 auto useNHWC auto
+[katago] 2026-03-27 11:15:20-0500: Initializing neural net buffer to be size 19 * 19 allowing smaller boards
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 3: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 3: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 5: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 5: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 2: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 2: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 4: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 4: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 7: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 7: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 11: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 11: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 10: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 10: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 12: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 12: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 8: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 8: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 15: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 0: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 0: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 1: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 1: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 6: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 6: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 14: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 14: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 9: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 15: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 13: Model version 15
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 13: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:23-0500: Eigen (CPU) backend thread 9: Model name: kata1-b28c512nbt-s9584861952-d4960414494
+[katago] 2026-03-27 11:15:29-0500: Loaded config C:\Users\mraid\Desktop\goweb\tools\katago\engine-eigen\analysis_example.cfg
+[katago] 2026-03-27 11:15:29-0500: Loaded model C:\Users\mraid\Desktop\goweb\tools\katago\engine-eigen\kata1.bin.gz
+[katago] 2026-03-27 11:15:29-0500: Analyzing up to 2 positions at a time in parallel
+[katago] 2026-03-27 11:15:29-0500: Started, ready to begin handling requests
