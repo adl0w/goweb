@@ -40,39 +40,48 @@
             </div>
           </div>
 
-          <div id="board-stage" class="pixi-stage board-stage" aria-label="Interactive Go board">
-            <div class="board-overlay-text">
-              <p id="status-text" class="status-text">Black to play on move 1.</p>
-              <p id="move-info" class="move-info">Position 0</p>
-            </div>
+          <div class="board-status-box">
+            <p id="status-text" class="status-text">Black to play on move 1.</p>
+            <p id="move-info" class="move-info">Position 0</p>
           </div>
 
-          <div class="play-controls">
-            <button id="reset-btn" class="stone-button stone-button-white" type="button">Reset</button>
-            <button id="pass-btn" class="stone-button stone-button-white" type="button">Pass</button>
-            <button id="cpu-black-btn" class="stone-button stone-button-black computer-button" type="button" aria-label="Computer plays black">
-              <span class="computer-icon" aria-hidden="true"></span>
-            </button>
-            <button id="cpu-white-btn" class="stone-button stone-button-white computer-button" type="button" aria-label="Computer plays white">
-              <span class="computer-icon" aria-hidden="true"></span>
-            </button>
-            <label class="auto-count-control" for="auto-move-count">
-              <span>CPU picks from</span>
-              <input id="auto-move-count" type="number" min="1" max="3" value="2">
-            </label>
-            <label class="board-toggle" for="show-children-labels">
-              <input id="show-children-labels" type="checkbox">
-              <span>Show Child Labels</span>
-            </label>
+          <div class="board-main-area">
+            <div class="play-controls">
+              <button id="reset-btn" class="stone-button stone-button-white" type="button">Reset</button>
+              <button id="pass-btn" class="stone-button stone-button-white" type="button">Pass</button>
+              <section class="autoplay-box" aria-label="Autoplay controls">
+                <p class="autoplay-title">Autoplay</p>
+                <div class="autoplay-controls">
+                  <button id="cpu-black-btn" class="stone-button stone-button-black computer-button" type="button" aria-label="Computer plays black">
+                    <span class="computer-icon" aria-hidden="true"></span>
+                  </button>
+                  <button id="cpu-white-btn" class="stone-button stone-button-white computer-button" type="button" aria-label="Computer plays white">
+                    <span class="computer-icon" aria-hidden="true"></span>
+                  </button>
+                  <label class="auto-count-control" for="auto-move-count">
+                    <span>CPU picks from</span>
+                    <input id="auto-move-count" type="number" min="1" max="3" value="2">
+                  </label>
+                </div>
+              </section>
+            </div>
+            <div id="board-stage" class="pixi-stage board-stage" aria-label="Interactive Go board"></div>
+          </div>
+
+          <section class="board-display-box" aria-label="Board display controls">
             <label class="board-toggle" for="show-move-numbers">
               <input id="show-move-numbers" type="checkbox">
               <span>Show Move Numbers</span>
             </label>
             <label class="board-toggle" for="show-move-preview">
               <input id="show-move-preview" type="checkbox" checked>
-              <span>Preview Next Move</span>
+              <span>Placement Preview</span>
             </label>
-          </div>
+            <label class="board-toggle" for="show-children-labels">
+              <input id="show-children-labels" type="checkbox">
+              <span>Show Children Labels</span>
+            </label>
+          </section>
         </section>
       </section>
 
@@ -84,52 +93,50 @@
             </div>
           </div>
 
-          <div class="tree-controls">
-            <label class="tree-control" for="tree-depth">
-              <span>branches</span>
-              <input id="tree-depth" type="range" min="1" max="8" value="3">
-            </label>
-            <label class="tree-control" for="tree-size">
-              <span>node size</span>
-              <input id="tree-size" type="range" min="70" max="150" value="100">
-            </label>
-            <label class="tree-control" for="tree-buffer">
-              <span>x spacing</span>
-              <input id="tree-buffer" type="range" min="40" max="220" value="100">
-            </label>
-            <label class="tree-control" for="tree-vbuffer">
-              <span>y spacing</span>
-              <input id="tree-vbuffer" type="range" min="40" max="220" value="100">
-            </label>
-            <label class="tree-control" for="tree-motion">
-              <span>motion</span>
-              <input id="tree-motion" type="range" min="0" max="100" value="50">
-            </label>
-            <label class="tree-control tree-control-toggle" for="scatter-enabled">
-              <span>scatter fx</span>
-              <input id="scatter-enabled" type="checkbox" checked>
-            </label>
-            <label class="tree-control" for="scatter-pixel">
-              <span>fx pixel</span>
-              <input id="scatter-pixel" type="range" min="1" max="16" value="4">
-            </label>
-            <label class="tree-control" for="scatter-amount">
-              <span>fx scatter</span>
-              <input id="scatter-amount" type="range" min="0" max="140" value="65">
-            </label>
-            <label class="tree-control" for="stone-glow">
-              <span>stone glow</span>
-              <input id="stone-glow" type="range" min="0" max="140" value="70">
-            </label>
-          </div>
-
           <div class="cloud-stage-wrap">
             <div id="cloud-stage" class="pixi-stage cloud-stage"></div>
+            <details class="tree-popout-panel">
+              <summary>
+                <span>Node Visualizer</span>
+                <span class="popout-arrow" aria-hidden="true">&#9656;</span>
+              </summary>
+              <div class="tree-controls">
+                <label class="tree-control" for="tree-depth">
+                  <span>branches</span>
+                  <input id="tree-depth" type="range" min="1" max="8" value="3">
+                </label>
+                <label class="tree-control" for="tree-size">
+                  <span>node size</span>
+                  <input id="tree-size" type="range" min="70" max="150" value="100">
+                </label>
+                <label class="tree-control" for="tree-buffer">
+                  <span>x spacing</span>
+                  <input id="tree-buffer" type="range" min="40" max="220" value="100">
+                </label>
+                <label class="tree-control" for="tree-vbuffer">
+                  <span>y spacing</span>
+                  <input id="tree-vbuffer" type="range" min="40" max="220" value="100">
+                </label>
+                <label class="tree-control" for="tree-motion">
+                  <span>motion</span>
+                  <input id="tree-motion" type="range" min="0" max="100" value="50">
+                </label>
+              </div>
+            </details>
             <div class="suggest-dock">
               <button id="analyze-btn" class="pill-button" type="button">Suggest Moves</button>
               <label class="suggest-slider" for="suggest-count">
                 <span>Moves</span>
-                <input id="suggest-count" type="range" min="1" max="4" value="2">
+                <div class="node-notch-slider">
+                  <div class="node-notch-line" aria-hidden="true"></div>
+                  <div class="node-notch-marks" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                  <input id="suggest-count" type="range" min="1" max="4" step="1" value="2" aria-label="Moves to suggest">
+                </div>
               </label>
             </div>
           </div>

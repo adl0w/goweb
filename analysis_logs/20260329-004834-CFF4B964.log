@@ -1,0 +1,16 @@
+2026-03-29 00:48:34-0500: Running with following config:
+logDir = analysis_logs
+maxVisits = 500
+nnCacheSizePowerOfTwo = 23
+nnMaxBatchSize = 64
+nnMutexPoolSizePowerOfTwo = 17
+nnRandomize = true
+numAnalysisThreads = 2
+numSearchThreads = 16
+reportAnalysisWinratesAs = BLACK
+
+2026-03-29 00:48:34-0500: Analysis Engine starting...
+2026-03-29 00:48:34-0500: KataGo v1.16.4
+2026-03-29 00:48:34-0500: nnRandSeed0 = 16668892941164714619
+2026-03-29 00:48:34-0500: After dedups: nnModelFile0 = C:\Users\mraid\Desktop\goweb\tools\katago\engine-eigen\kata1.bin.gz useFP16 auto useNHWC auto
+2026-03-29 00:48:34-0500: Initializing neural net buffer to be size 19 * 19 allowing smaller boards

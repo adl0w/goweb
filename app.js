@@ -566,10 +566,6 @@ const refs = {
   treeMotion: document.getElementById("tree-motion"),
   treeBuffer: document.getElementById("tree-buffer"),
   treeVBuffer: document.getElementById("tree-vbuffer"),
-  scatterEnabled: document.getElementById("scatter-enabled"),
-  scatterPixel: document.getElementById("scatter-pixel"),
-  scatterAmount: document.getElementById("scatter-amount"),
-  stoneGlow: document.getElementById("stone-glow"),
   analyzeButton: document.getElementById("analyze-btn"),
   resetButton: document.getElementById("reset-btn"),
   passButton: document.getElementById("pass-btn"),
@@ -615,13 +611,6 @@ const state = {
   showMovePreview: true,
   previewMove: null,
   boardCursorGlobal: null,
-  scatterFilter: null,
-  scatterFxSupported: false,
-  scatterFxEnabled: true,
-  scatterPixelSize: 4,
-  scatterAmount: 0.65,
-  stoneGlow: 0.7,
-  scatterTime: 0,
 };
 
 function createRoot(size) {
@@ -827,70 +816,6 @@ function updateAnalysisMeta(message) {
   refs.analysisMeta.textContent = message;
 }
 
-function createScatterFilter() {
-  if (!Filter) {
-    return null;
-  }
-  try {
-    return new Filter(undefined, SCATTER_DITHER_FRAGMENT, {
-      uResolution: new Float32Array([1, 1]),
-      uPixelSize: state.scatterPixelSize,
-      uScatter: state.scatterAmount,
-      uTime: 0,
-    });
-  } catch (error) {
-    console.warn("Scatter filter unavailable.", error);
-    return null;
-  }
-}
-
-function applyScatterFilter() {
-  if (!state.cloudApp?.stage) {
-    return;
-  }
-  if (!state.scatterFilter || !state.scatterFxEnabled) {
-    state.cloudApp.stage.filters = null;
-    return;
-  }
-  state.cloudApp.stage.filters = [state.scatterFilter];
-}
-
-function updateScatterFilterUniforms(deltaSeconds = 0) {
-  if (!state.scatterFilter?.uniforms) {
-    return;
-  }
-
-  state.scatterTime += Math.max(0, deltaSeconds || 0);
-
-  const width = Math.max(1, state.cloudApp?.renderer?.width || refs.cloudHost?.clientWidth || 1);
-  const height = Math.max(1, state.cloudApp?.renderer?.height || refs.cloudHost?.clientHeight || 1);
-  const uniforms = state.scatterFilter.uniforms;
-  const resolution = uniforms.uResolution;
-  if (ArrayBuffer.isView(resolution) && resolution.length >= 2) {
-    resolution[0] = width;
-    resolution[1] = height;
-  } else {
-    uniforms.uResolution = [width, height];
-  }
-  uniforms.uPixelSize = state.scatterPixelSize;
-  uniforms.uScatter = state.scatterAmount;
-  uniforms.uTime = state.scatterTime;
-}
-
-function setScatterControlsEnabled(enabled) {
-  const controls = [
-    refs.scatterEnabled,
-    refs.scatterPixel,
-    refs.scatterAmount,
-  ];
-  for (const control of controls) {
-    if (!control) {
-      continue;
-    }
-    control.disabled = !enabled;
-  }
-}
-
 function updateComputerControls() {
   refs.cpuBlackButton.classList.toggle("active", state.autoPlayer === "B");
   refs.cpuWhiteButton.classList.toggle("active", state.autoPlayer === "W");
@@ -1049,8 +974,6 @@ function resetApp() {
   state.autoBusy = false;
   state.previewMove = null;
   state.boardCursorGlobal = null;
-  state.scatterTime = 0;
-  updateScatterFilterUniforms(0);
   renderBoard();
   refreshStatus();
   updateMoveInfo();
@@ -1520,14 +1443,7 @@ function drawBoardAnnotations(node, annotations, originX, originY, step) {
 
 function drawStone(graphics, x, y, radius, color, outlineWidth = 2) {
   const palette = getPalette();
-  const glowStrength = clamp(state.stoneGlow || 0, 0, 1.4);
-  const glowColor = color === palette.blackStone ? palette.markerLight : palette.markerDark;
   graphics.clear();
-  if (glowStrength > 0.01) {
-    graphics
-      .circle(x, y, radius + 4 + glowStrength * 8)
-      .fill({ color: glowColor, alpha: 0.04 + glowStrength * 0.12 });
-  }
   graphics.circle(x, y, radius).fill(color).stroke({ width: outlineWidth, color: palette.ink });
 }
 
@@ -1870,7 +1786,6 @@ function ensureCloudView(nodeId) {
   }
 
   const container = new Container();
-  const glow = new Graphics();
   const halo = new Graphics();
   const stone = new Graphics();
   const loadingText = new Text({
@@ -1884,7 +1799,7 @@ function ensureCloudView(nodeId) {
   });
   loadingText.anchor.set(0.5);
   loadingText.visible = false;
-  container.addChild(glow, halo, stone, loadingText);
+  container.addChild(halo, stone, loadingText);
   container.eventMode = "static";
   container.cursor = "pointer";
   container.on("pointerover", () => {
@@ -1911,7 +1826,6 @@ function ensureCloudView(nodeId) {
   state.cloudLayers.nodes.addChild(container);
   const view = {
     container,
-    glow,
     halo,
     stone,
     loadingText,
@@ -1938,20 +1852,6 @@ function drawCloudNode(view, node, info) {
   const radius = (info.focus ? 15 : info.distance === 1 ? 13 : 11) * scaleBoost;
   const centerBoost = info.distance <= 1 ? 6 : info.distance === 2 ? 2 : 0;
   const haloRadius = radius + (info.hovered ? 10 + centerBoost : info.selected ? 7 + centerBoost : info.focus ? 5 + centerBoost : 0);
-  const glowStrength = clamp(state.stoneGlow || 0, 0, 1.4);
-
-  view.glow.clear();
-  if (glowStrength > 0.01 && nodeColor !== "root") {
-    const glowColor = nodeColor === "black" ? palette.markerLight : palette.markerDark;
-    const outerRadius = radius + 5 + glowStrength * 10;
-    const innerRadius = radius + 2 + glowStrength * 5;
-    view.glow
-      .circle(0, 0, outerRadius)
-      .fill({ color: glowColor, alpha: 0.05 + glowStrength * 0.12 });
-    view.glow
-      .circle(0, 0, innerRadius)
-      .fill({ color: glowColor, alpha: 0.04 + glowStrength * 0.08 });
-  }
 
   view.halo.clear();
   if (info.hovered || info.selected || info.focus) {
@@ -2019,7 +1919,6 @@ function stepCloud(deltaSeconds) {
   }
 
   state.time += deltaSeconds;
-  updateScatterFilterUniforms(deltaSeconds);
   if (state.edgeZoneDirection !== 0) {
     state.edgeScrollTimer += deltaSeconds;
     const scrollStepSeconds = 0.28;
@@ -2131,17 +2030,6 @@ async function bootstrapPixi() {
   const nodes = new Container();
   state.cloudLayers = { backdrop, baseLinks, focusLinks, nodes };
   state.cloudApp.stage.addChild(backdrop, baseLinks, focusLinks, nodes);
-  state.scatterFilter = createScatterFilter();
-  state.scatterFxSupported = Boolean(state.scatterFilter);
-  if (!state.scatterFxSupported) {
-    state.scatterFxEnabled = false;
-    if (refs.scatterEnabled) {
-      refs.scatterEnabled.checked = false;
-    }
-  }
-  setScatterControlsEnabled(state.scatterFxSupported);
-  applyScatterFilter();
-  updateScatterFilterUniforms(0);
   state.cloudApp.ticker.add((ticker) => {
     stepCloud(ticker.deltaMS / 1000);
   });
@@ -2182,22 +2070,6 @@ function wireEvents() {
   });
   refs.treeVBuffer.addEventListener("input", () => {
     state.treeVBuffer = clamp((Number(refs.treeVBuffer.value) || 100) / 100, 0.4, 2);
-  });
-  refs.scatterEnabled?.addEventListener("change", () => {
-    state.scatterFxEnabled = Boolean(refs.scatterEnabled.checked);
-    applyScatterFilter();
-  });
-  refs.scatterPixel?.addEventListener("input", () => {
-    state.scatterPixelSize = clamp(Number(refs.scatterPixel.value) || 4, 1, 16);
-    updateScatterFilterUniforms(0);
-  });
-  refs.scatterAmount?.addEventListener("input", () => {
-    state.scatterAmount = clamp((Number(refs.scatterAmount.value) || 65) / 100, 0, 1.4);
-    updateScatterFilterUniforms(0);
-  });
-  refs.stoneGlow?.addEventListener("input", () => {
-    state.stoneGlow = clamp((Number(refs.stoneGlow.value) || 70) / 100, 0, 1.4);
-    renderBoard();
   });
   refs.suggestCount.addEventListener("input", () => syncSuggestControls(refs.suggestCount.value));
   refs.autoMoveCount.addEventListener("input", () => {
@@ -2286,10 +2158,6 @@ async function bootstrap() {
   state.showChildrenLabels = Boolean(refs.showChildrenLabels?.checked);
   state.showMoveNumbers = Boolean(refs.showMoveNumbers?.checked);
   state.showMovePreview = refs.showMovePreview ? Boolean(refs.showMovePreview.checked) : true;
-  state.scatterFxEnabled = refs.scatterEnabled ? Boolean(refs.scatterEnabled.checked) : true;
-  state.scatterPixelSize = clamp(Number(refs.scatterPixel?.value) || 4, 1, 16);
-  state.scatterAmount = clamp((Number(refs.scatterAmount?.value) || 65) / 100, 0, 1.4);
-  state.stoneGlow = clamp((Number(refs.stoneGlow?.value) || 70) / 100, 0, 1.4);
   await bootstrapPixi();
   wireEvents();
   resetApp();
